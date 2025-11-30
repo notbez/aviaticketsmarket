@@ -5,10 +5,10 @@ import { firstValueFrom } from 'rxjs';
 
 @Injectable()
 export class FlightsService {
-  private readonly baseUrl = 'https://test.onelya.ru/api';
-  private readonly login = 'trevel_manager';
-  private readonly password = 'Dy0Y(CWo';
-  private readonly pos = 'ВСТАВЬ_СЮДА_POS'; // <<< ОБЯЗАТЕЛЬНО ЗАМЕНИТЬ
+  private readonly baseUrl = 'https://api-test.onelya.ru/';
+  private readonly login = 'trevel_test';
+  private readonly password = 'hldKMo@9';
+  private readonly pos = 'trevel_test'; // <<< ОБЯЗАТЕЛЬНО ЗАМЕНИТЬ
 
   constructor(private readonly http: HttpService) {}
 

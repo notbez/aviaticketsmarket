@@ -1,4 +1,4 @@
-// src/booking/booking.service.ts
+// tickets-backend/src/booking/booking.service.ts
 import { Injectable, Logger } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { HttpService } from '@nestjs/axios';
@@ -12,11 +12,14 @@ export interface Booking {
   price?: number;
   contact?: { email?: string; name?: string };
   status: string;
-  providerBookingId: string; // id от Onelya или наша локальная onelya-...
+  providerBookingId: string;
   provider?: string;
   flightNumber?: string;
   departTime?: string;
   arriveTime?: string;
+  seat?: string;
+  gate?: string;
+  boardingTime?: string;
 }
 
 @Injectable()
@@ -25,9 +28,11 @@ export class BookingService {
   private bookings: Booking[] = [];
 
   // Onelya config from env
-  private readonly baseUrl = process.env.ONELYA_BASE_URL || 'https://test.onelya.ru/api';
+  private readonly baseUrl =
+    process.env.ONELYA_BASE_URL || 'https://test.onelya.ru/api';
   private readonly login = process.env.ONELYA_LOGIN || 'trevel_manager';
-  private readonly password = process.env.ONELYA_PASSWORD || 'Dy0Y(CWo';
+  private readonly password =
+    process.env.ONELYA_PASSWORD || 'Dy0Y(CWo';
   private readonly pos = process.env.ONELYA_POS || 'ВАШ_POS_ID';
 
   constructor(private readonly http: HttpService) {}
@@ -48,26 +53,30 @@ export class BookingService {
       flightNumber: body.flightNumber || 'SU 5411',
       departTime: body.departTime || '23:15',
       arriveTime: body.arriveTime || '23:55',
+      seat: body.seat || '12A',
+      gate: body.gate || 'B5',
+      boardingTime: body.boardingTime || '08:45',
     };
     this.bookings.push(booking);
+    this.logger.log(`Created local booking ${booking.id}`);
     return booking;
+  }
+
+  // --- Public create (used by controller) ---
+  // Возвращает { success: boolean, booking, raw?, error? }
+  async create(body: any) {
+    return this.createOnelya(body);
   }
 
   // --- Create reservation in Onelya (best-effort) ---
   async createOnelya(body: any) {
-    // body expected from frontend: { flightId?, from, to, date, price, contact, flightNumber, departTime, arriveTime, segments }
     const url = `${this.baseUrl}/Order/V1/Reservation/Create`;
-    const auth = 'Basic ' + Buffer.from(`${this.login}:${this.password}`).toString('base64');
+    const auth =
+      'Basic ' + Buffer.from(`${this.login}:${this.password}`).toString('base64');
 
-    // Onelya expects a rather specific JSON structure. We will map minimal fields.
-    // IMPORTANT: if Onelya requires additional fields (passengers, docs) — extend mapping.
     const payload = {
-      // minimal: quantity info + segments - adapt later as needed
       Pos: this.pos,
-      // The actual Onelya API may require different field names.
-      // We send a minimal reservation structure — Onelya may return error if required fields are missing.
       Reservation: {
-        // Example minimal fields — this may need tuning per Onelya contract
         Pricing: {
           Prices: [
             {
@@ -77,13 +86,14 @@ export class BookingService {
             },
           ],
         },
-        Segments: body.segments || [
-          {
-            OriginCode: body.from,
-            DestinationCode: body.to,
-            DepartureDate: `${body.date}T00:00:00`,
-          },
-        ],
+        Segments:
+          body.segments || [
+            {
+              OriginCode: body.from,
+              DestinationCode: body.to,
+              DepartureDate: `${body.date}T00:00:00`,
+            },
+          ],
         Contact: body.contact || {},
       },
     };
@@ -102,13 +112,18 @@ export class BookingService {
       );
 
       const data = res.data;
-      // Onelya response shape may vary. We try to extract reservation id:
-      const providerBookingId =
-        data?.ReservationId || data?.Reservation?.Id || data?.Result?.ReservationId || data?.Id || randomUUID();
 
-      // Save in our storage
+      // Попытка извлечь ID брони из различных мест в ответе
+      const providerBookingId =
+        data?.ReservationId ||
+        data?.Reservation?.Id ||
+        data?.Result?.ReservationId ||
+        data?.Id ||
+        randomUUID();
+
+      // Сохраняем в локальном сторе (с заполененными seat/gate/boardingTime при наличии)
       const id = randomUUID();
-      const booking = {
+      const booking: Booking = {
         id,
         from: body.from,
         to: body.to,
@@ -116,28 +131,40 @@ export class BookingService {
         price: body.price,
         contact: body.contact,
         providerBookingId,
-        status: 'CREATED', // tentative
+        status: 'CREATED',
         provider: 'onelya',
         flightNumber: body.flightNumber,
         departTime: body.departTime,
         arriveTime: body.arriveTime,
-      } as Booking;
+        seat: body.seat || '12A',
+        gate: body.gate || 'B5',
+        boardingTime: body.boardingTime || '08:45',
+      };
 
       this.bookings.push(booking);
+      this.logger.log(`Created onelya booking ${providerBookingId} (local ${id})`);
 
       return { success: true, booking, raw: data };
     } catch (err) {
-      this.logger.error('Onelya create error', err.response?.data || err.message);
+      this.logger.error(
+        'Onelya create error',
+        err?.response?.data || err?.message || err,
+      );
       // fallback to local
       const booking = this.createLocal(body);
-      return { success: false, booking, error: err.response?.data || err.message };
+      return {
+        success: false,
+        booking,
+        error: err?.response?.data || err?.message || String(err),
+      };
     }
   }
 
   // --- Confirm reservation in Onelya ---
   async confirmOnelya(providerBookingId: string) {
     const url = `${this.baseUrl}/Order/V1/Reservation/Confirm`;
-    const auth = 'Basic ' + Buffer.from(`${this.login}:${this.password}`).toString('base64');
+    const auth =
+      'Basic ' + Buffer.from(`${this.login}:${this.password}`).toString('base64');
 
     const payload = { ReservationId: providerBookingId, Pos: this.pos };
 
@@ -155,45 +182,46 @@ export class BookingService {
       );
       const data = res.data;
 
-      // update local booking status if we have it
-      const booking = this.bookings.find((b) => b.providerBookingId === providerBookingId);
+      const booking = this.bookings.find(
+        (b) => b.providerBookingId === providerBookingId,
+      );
       if (booking) booking.status = 'CONFIRMED';
 
       return { success: true, raw: data };
     } catch (err) {
-      this.logger.error('Onelya confirm error', err.response?.data || err.message);
-      return { success: false, error: err.response?.data || err.message };
+      this.logger.error(
+        'Onelya confirm error',
+        err?.response?.data || err?.message || err,
+      );
+      return { success: false, error: err?.response?.data || err?.message || String(err) };
     }
   }
 
   // --- Get blank / ticket PDF or JSON ---
-  // Try Avia/V1/Reservation/Blank or Order/V1/Reservation/Blank depending on provider
   async getBlank(providerBookingId: string) {
     const url1 = `${this.baseUrl}/Avia/V1/Reservation/Blank`;
     const url2 = `${this.baseUrl}/Order/V1/Reservation/Blank`;
-    const auth = 'Basic ' + Buffer.from(`${this.login}:${this.password}`).toString('base64');
+    const auth =
+      'Basic ' + Buffer.from(`${this.login}:${this.password}`).toString('base64');
 
     const payload = { ReservationId: providerBookingId, Pos: this.pos };
 
     try {
-      // try first endpoint
       let res = await firstValueFrom(
         this.http.post<any>(url1, payload, {
           headers: { Authorization: auth, Pos: this.pos, 'Content-Type': 'application/json' },
-          responseType: 'arraybuffer', // pdf binary possible
+          responseType: 'arraybuffer',
           timeout: 60000,
         }),
       );
 
-      // If response is json, return json; if pdf, return buffer
       if (res.headers && res.headers['content-type'] && res.headers['content-type'].includes('application/pdf')) {
         return { type: 'pdf', buffer: Buffer.from(res.data) };
       } else {
         return { type: 'json', data: res.data };
       }
     } catch (err1) {
-      this.logger.warn('Blank via Avia failed, trying Order API', err1.message || err1);
-
+      this.logger.warn('Blank via Avia failed, trying Order API', String(err1));
       try {
         let res2 = await firstValueFrom(
           this.http.post<any>(url2, payload, {
@@ -209,8 +237,8 @@ export class BookingService {
           return { type: 'json', data: res2.data };
         }
       } catch (err2) {
-        this.logger.error('Both blank endpoints failed', err2.response?.data || err2.message || err2);
-        return { error: true, message: err2.response?.data || err2.message || 'Blank failed' };
+        this.logger.error('Both blank endpoints failed', err2?.response?.data || err2?.message || err2);
+        return { error: true, message: err2?.response?.data || err2?.message || 'Blank failed' };
       }
     }
   }
