@@ -32,11 +32,22 @@ export default function HomeScreen() {
   const [showClass, setShowClass] = useState(false);
 
   const [loading, setLoading] = useState(false);
+  const bottomSheetRef = useRef(null);
+  const [bottomSheetContent, setBottomSheetContent] = useState(null);
 
   const formatDate = (d) =>
     `${d.getDate().toString().padStart(2, '0')}.${(d.getMonth() + 1)
       .toString()
       .padStart(2, '0')}.${d.getFullYear()}`;
+
+  const openBottomSheet = (content) => {
+    setBottomSheetContent(content);
+    bottomSheetRef.current?.expand();
+  };
+
+  const closeBottomSheet = () => {
+    bottomSheetRef.current?.close();
+  };
 
   const onSearch = async () => {
     setLoading(true);

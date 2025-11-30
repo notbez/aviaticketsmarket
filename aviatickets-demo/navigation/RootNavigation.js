@@ -1,4 +1,20 @@
-// navigation/RootNavigation.js
+/**
+ * RootNavigation.js - Корневая навигация приложения
+ * 
+ * Определяет структуру навигации между экранами приложения:
+ * - MainTabs: главный экран с нижними вкладками (Home, Tickets, Profile)
+ * - Login/SignUp: экраны авторизации
+ * - Results: результаты поиска рейсов
+ * - SelectCity: выбор города для поиска
+ * - Account/Settings: настройки аккаунта
+ * - Faq/Support: FAQ и поддержка
+ * 
+ * Использует Stack Navigator для навигации между экранами
+ * headerShown: false - скрывает стандартный заголовок (используются кастомные)
+ * 
+ * @module RootNavigator
+ */
+
 import React from 'react';
 import { createStackNavigator } from '@react-navigation/stack';
 import BottomTabs from './BottomTabs';
@@ -11,23 +27,37 @@ import SelectCityScreen from '../screens/SelectCityScreen';
 
 import AccountScreen from '../screens/AccountScreen';
 import SettingsScreen from '../screens/SettingsScreen';
+import FaqScreen from '../screens/FaqScreen';
+import SupportScreen from '../screens/SupportScreen';
 
 const Stack = createStackNavigator();
 
-// navigation/RootNavigation.js
+/**
+ * RootNavigator - корневой навигатор приложения
+ * 
+ * @returns {JSX.Element} Stack Navigator с всеми экранами
+ */
 export default function RootNavigator() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
-      {/* Главный экран теперь первый */}
+      {/* Главный экран с нижними вкладками (Home, Tickets, Profile) */}
       <Stack.Screen name="MainTabs" component={BottomTabs} />
 
-      {/* Остальные ниже, чтобы можно было переходить вручную */}
+      {/* Экраны авторизации */}
       <Stack.Screen name="Login" component={LoginScreen} />
       <Stack.Screen name="SignUp" component={SignUpScreen} />
+      
+      {/* Экраны поиска и бронирования */}
       <Stack.Screen name="Results" component={ResultsScreen} />
       <Stack.Screen name="SelectCity" component={SelectCityScreen} />
+      
+      {/* Экраны профиля и настроек */}
       <Stack.Screen name="Account" component={AccountScreen} />
       <Stack.Screen name="Settings" component={SettingsScreen} />
+      
+      {/* Экраны помощи */}
+      <Stack.Screen name="Faq" component={FaqScreen} />
+      <Stack.Screen name="Support" component={SupportScreen} />
     </Stack.Navigator>
   );
 }

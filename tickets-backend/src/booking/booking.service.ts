@@ -1,35 +1,19 @@
 // tickets-backend/src/booking/booking.service.ts
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model, Types } from 'mongoose';
 import { randomUUID } from 'crypto';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
-
-export interface Booking {
-  id: string;
-  from?: string;
-  to?: string;
-  date?: string;
-  price?: number;
-  contact?: { email?: string; name?: string };
-  status: string;
-  providerBookingId: string;
-  provider?: string;
-  flightNumber?: string;
-  departTime?: string;
-  arriveTime?: string;
-  seat?: string;
-  gate?: string;
-  boardingTime?: string;
-}
+import { Booking, BookingDocument } from '../schemas/booking.schema';
 
 export type CreateResult =
-  | { success: true; booking: Booking; raw?: any }
-  | { success: false; booking: Booking; error?: any; raw?: any };
+  | { success: true; booking: BookingDocument; raw?: any }
+  | { success: false; booking: BookingDocument; error?: any; raw?: any };
 
 @Injectable()
 export class BookingService {
   private readonly logger = new Logger(BookingService.name);
-  private bookings: Booking[] = [];
 
   // Onelya config from env
   private readonly baseUrl =
@@ -38,13 +22,16 @@ export class BookingService {
   private readonly password = process.env.ONELYA_PASSWORD || 'hldKMo@9';
   private readonly pos = process.env.ONELYA_POS || 'trevel_test';
 
-  constructor(private readonly http: HttpService) {
+  constructor(
+    @InjectModel(Booking.name) private bookingModel: Model<BookingDocument>,
+    private readonly http: HttpService,
+  ) {
     // Проверка и предупреждения о пустых переменных
-    if (!this.login) {
-      this.logger.warn('ONELYA_LOGIN is not set, using empty string');
+    if (!this.login || this.login === 'trevel_test') {
+      this.logger.warn('ONELYA_LOGIN is not set or using default value');
     }
-    if (!this.password) {
-      this.logger.warn('ONELYA_PASSWORD is not set, using empty string');
+    if (!this.password || this.password === 'hldKMo@9') {
+      this.logger.warn('ONELYA_PASSWORD is not set or using default value');
     }
     if (!this.pos || this.pos === 'trevel_test') {
       this.logger.warn('ONELYA_POS is not set or using default value');
@@ -52,40 +39,74 @@ export class BookingService {
     this.logger.log(`Onelya baseUrl: ${this.baseUrl}`);
   }
 
-  // --- Local create (fallback) ---
-  public createLocal(body: any): Booking {
-    const id = randomUUID();
-    const booking: Booking = {
-      id,
+  /**
+   * Создание локального бронирования (fallback)
+   * 
+   * Используется когда Onelya API недоступен или возвращает ошибку
+   * Создает бронирование в MongoDB с тестовыми данными
+   * 
+   * @param userId - ID пользователя из JWT токена
+   * @param body - Данные бронирования (from, to, date, price и т.д.)
+   * @returns Созданное бронирование в MongoDB
+   */
+  public async createLocal(userId: string, body: any): Promise<BookingDocument> {
+    const booking = new this.bookingModel({
+      user: new Types.ObjectId(userId),
       from: body.from || 'Санкт-Петербург',
       to: body.to || 'Москва',
-      date: body.date || new Date().toISOString().split('T')[0],
-      price: body.price || 5600,
-      contact: body.contact || {},
-      providerBookingId: `onelya-${id}`,
-      status: 'PENDING',
-      provider: 'onelya-mock',
+      departureDate: body.date ? new Date(body.date) : new Date(),
+      returnDate: body.returnDate ? new Date(body.returnDate) : null,
+      isRoundTrip: body.isRoundTrip || false,
       flightNumber: body.flightNumber || 'SU 5411',
       departTime: body.departTime || '23:15',
       arriveTime: body.arriveTime || '23:55',
+      returnDepartTime: body.returnDepartTime,
+      returnArriveTime: body.returnArriveTime,
+      passengers: body.passengers || [],
+      providerBookingId: `onelya-${randomUUID()}`,
+      bookingStatus: 'reserved',
+      provider: 'onelya-mock',
+      payment: {
+        paymentStatus: 'pending',
+        amount: body.price || 5600,
+        currency: 'RUB',
+      },
       seat: body.seat || '12A',
       gate: body.gate || 'B5',
       boardingTime: body.boardingTime || '08:45',
-    };
-    this.bookings.push(booking);
-    this.logger.log(`Created local booking ${booking.id}`);
+    });
+    await booking.save();
+    this.logger.log(`Created local booking ${booking._id}`);
     return booking;
   }
 
-  // --- Public create (used by controller) ---
-  // Возвращает { success: boolean, booking, raw?, error? }
-  public async create(body: any): Promise<CreateResult> {
+  /**
+   * Публичный метод создания бронирования (используется контроллером)
+   * 
+   * Пытается создать бронирование через Onelya API
+   * При ошибке автоматически переключается на локальное создание
+   * 
+   * @param userId - ID пользователя из JWT токена
+   * @param body - Данные бронирования
+   * @returns Результат создания с флагом success и данными бронирования
+   */
+  public async create(userId: string, body: any): Promise<CreateResult> {
     // Основной путь — попытаться создать в Onelya, в случае ошибки — fallback на локальный
-    return this.createOnelya(body);
+    return this.createOnelya(userId, body);
   }
 
-  // --- Create reservation in Onelya (best-effort) ---
-  public async createOnelya(body: any): Promise<CreateResult> {
+  /**
+   * Создание бронирования через Onelya API
+   * 
+   * Отправляет запрос к Onelya API для создания резервации
+   * При успехе сохраняет бронирование в MongoDB
+   * При ошибке возвращает результат с success: false и создает локальное бронирование
+   * 
+   * @param userId - ID пользователя
+   * @param body - Данные бронирования (from, to, date, passengers и т.д.)
+   * @returns Результат создания с данными бронирования и raw ответом от API
+   */
+  public async createOnelya(userId: string, body: any): Promise<CreateResult> {
     const url = `${this.baseUrl}/Order/V1/Reservation/Create`;
     const auth =
       'Basic ' + Buffer.from(`${this.login}:${this.password}`).toString('base64');
@@ -143,29 +164,37 @@ export class BookingService {
         data?.Id ||
         randomUUID();
 
-      // Сохраняем в локальном сторе (с заполненными seat/gate/boardingTime при наличии)
-      const id = randomUUID();
-      const booking: Booking = {
-        id,
+      // Сохраняем в MongoDB
+      const booking = new this.bookingModel({
+        user: new Types.ObjectId(userId),
         from: body.from,
         to: body.to,
-        date: body.date,
-        price: body.price,
-        contact: body.contact,
-        providerBookingId,
-        status: 'CREATED',
-        provider: 'onelya',
+        departureDate: body.date ? new Date(body.date) : new Date(),
+        returnDate: body.returnDate ? new Date(body.returnDate) : null,
+        isRoundTrip: body.isRoundTrip || false,
         flightNumber: body.flightNumber,
         departTime: body.departTime,
         arriveTime: body.arriveTime,
+        returnDepartTime: body.returnDepartTime,
+        returnArriveTime: body.returnArriveTime,
+        passengers: body.passengers || [],
+        providerBookingId,
+        bookingStatus: 'reserved',
+        provider: 'onelya',
+        payment: {
+          paymentStatus: 'pending',
+          amount: body.price || 0,
+          currency: 'RUB',
+        },
         seat: body.seat || '12A',
         gate: body.gate || 'B5',
         boardingTime: body.boardingTime || '08:45',
-      };
+        rawProviderData: data,
+      });
 
-      this.bookings.push(booking);
+      await booking.save();
       this.logger.log(
-        `Created onelya booking ${providerBookingId} (local ${id})`,
+        `Created onelya booking ${providerBookingId} (local ${booking._id})`,
       );
 
       return { success: true, booking, raw: data };
@@ -177,7 +206,7 @@ export class BookingService {
         errorStatus ? `Status: ${errorStatus}` : '',
       );
       // fallback to local
-      const booking = this.createLocal(body);
+      const booking = await this.createLocal(userId, body);
       return {
         success: false,
         booking,
@@ -212,10 +241,13 @@ export class BookingService {
       const data = res.data;
       this.logger.log(`[Onelya] Reservation confirm response status: ${res.status}`);
 
-      const booking = this.bookings.find(
-        (b) => b.providerBookingId === providerBookingId,
-      );
-      if (booking) booking.status = 'CONFIRMED';
+      const booking = await this.bookingModel.findOne({
+        providerBookingId,
+      });
+      if (booking) {
+        booking.bookingStatus = 'ticketed';
+        await booking.save();
+      }
 
       return { success: true, raw: data };
     } catch (err: any) {
@@ -304,12 +336,23 @@ export class BookingService {
   }
 
   // get booking by our internal id
-  public getById(id: string): Booking | undefined {
-    return this.bookings.find((b) => b.id === id);
+  public async getById(id: string): Promise<BookingDocument | null> {
+    if (!Types.ObjectId.isValid(id)) {
+      return null;
+    }
+    return this.bookingModel.findById(id);
   }
 
   // find booking by provider id
-  public findByProviderId(providerId: string) {
-    return this.bookings.find((b) => b.providerBookingId === providerId);
+  public async findByProviderId(providerId: string): Promise<BookingDocument | null> {
+    return this.bookingModel.findOne({ providerBookingId: providerId });
+  }
+
+  // get all bookings for a user
+  public async getUserBookings(userId: string): Promise<BookingDocument[]> {
+    return this.bookingModel
+      .find({ user: new Types.ObjectId(userId) })
+      .sort({ createdAt: -1 })
+      .exec();
   }
 }

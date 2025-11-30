@@ -1,40 +1,172 @@
 // screens/LoginScreen.js
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  SafeAreaView,
+  Alert,
+  Platform,
+} from 'react-native';
 import Input from '../components/Input';
 import PrimaryButton from '../components/PrimaryButton';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { FontAwesome } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { API_BASE } from '../constants/api';
+import { useAuth } from '../contexts/AuthContext';
+import * as Google from 'expo-auth-session/providers/google';
+import * as AppleAuthentication from 'expo-apple-authentication';
+import * as WebBrowser from 'expo-web-browser';
+
+WebBrowser.maybeCompleteAuthSession();
 
 export default function LoginScreen({ navigation }) {
   const insets = useSafeAreaInsets();
+  const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleSignIn = () => {
-    navigation.replace('MainTabs');
+  const [request, response, promptAsync] = Google.useAuthRequest({
+    iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
+    androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
+    webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
+  });
+
+  React.useEffect(() => {
+    if (response?.type === 'success') {
+      handleGoogleAuth(response.authentication.idToken);
+    }
+  }, [response]);
+
+  const handleSignIn = async () => {
+    if (!email || !password) {
+      Alert.alert('Ошибка', 'Заполните все поля');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.message || 'Ошибка входа');
+      }
+
+      await login(data.accessToken, data.user);
+      navigation.replace('MainTabs');
+    } catch (error) {
+      Alert.alert('Ошибка', error.message || 'Не удалось войти');
+      console.error('Login error:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogleAuth = async (idToken) => {
+    if (!idToken) return;
+
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/auth/google`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idToken }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.message || 'Ошибка авторизации через Google');
+      }
+
+      await login(data.accessToken, data.user);
+      navigation.replace('MainTabs');
+    } catch (error) {
+      Alert.alert('Ошибка', error.message || 'Не удалось войти через Google');
+      console.error('Google auth error:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAppleAuth = async () => {
+    try {
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      });
+
+      if (credential.identityToken) {
+        setLoading(true);
+        try {
+          const res = await fetch(`${API_BASE}/auth/apple`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              identityToken: credential.identityToken,
+              authorizationCode: credential.authorizationCode,
+              fullName: credential.fullName
+                ? `${credential.fullName.givenName || ''} ${credential.fullName.familyName || ''}`.trim()
+                : undefined,
+            }),
+          });
+
+          const data = await res.json();
+
+          if (!res.ok) {
+            throw new Error(data.message || 'Ошибка авторизации через Apple');
+          }
+
+          await login(data.accessToken, data.user);
+          navigation.replace('MainTabs');
+        } catch (error) {
+          Alert.alert('Ошибка', error.message || 'Не удалось войти через Apple');
+          console.error('Apple auth error:', error);
+        } finally {
+          setLoading(false);
+        }
+      }
+    } catch (e) {
+      if (e.code === 'ERR_CANCELED') {
+        // User canceled
+        return;
+      }
+      Alert.alert('Ошибка', 'Не удалось войти через Apple');
+      console.error('Apple auth error:', e);
+    }
   };
 
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.container}>
-
         <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
           <MaterialCommunityIcons name="airplane" size={36} color="#000" />
         </View>
 
         <Text style={styles.title}>Начните путешествие</Text>
-        <Text style={styles.sub}>Ваши данные в безопасности. Войдите, чтобы продолжить.</Text>
+        <Text style={styles.sub}>
+          Ваши данные в безопасности. Войдите, чтобы продолжить.
+        </Text>
 
         <View style={{ marginTop: 18, width: '100%' }}>
-
           <Input
             label="Email"
             placeholder="Введите ваш email"
             value={email}
             onChangeText={setEmail}
             keyboardType="email-address"
+            autoCapitalize="none"
           />
 
           <Input
@@ -56,10 +188,17 @@ export default function LoginScreen({ navigation }) {
             </TouchableOpacity>
           </View>
 
-          <PrimaryButton title="Войти" onPress={handleSignIn} />
+          <PrimaryButton
+            title="Войти"
+            onPress={handleSignIn}
+            disabled={loading}
+          />
         </View>
 
-        <TouchableOpacity style={styles.link} onPress={() => navigation.navigate('SignUp')}>
+        <TouchableOpacity
+          style={styles.link}
+          onPress={() => navigation.navigate('SignUp')}
+        >
           <Text style={styles.linkText}>
             Нет аккаунта? <Text style={{ color: '#29A9E0' }}>Зарегистрироваться</Text>
           </Text>
@@ -72,17 +211,19 @@ export default function LoginScreen({ navigation }) {
         </View>
 
         <View style={styles.socialRow}>
-          <TouchableOpacity style={styles.socialBtn}>
+          <TouchableOpacity
+            style={styles.socialBtn}
+            onPress={() => promptAsync()}
+            disabled={!request}
+          >
             <FontAwesome name="google" size={20} color="#DB4437" />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.socialBtn}>
-            <FontAwesome name="facebook" size={20} color="#4267B2" />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.socialBtn}>
-            <FontAwesome name="apple" size={20} color="#000" />
-          </TouchableOpacity>
+          {Platform.OS === 'ios' && (
+            <TouchableOpacity style={styles.socialBtn} onPress={handleAppleAuth}>
+              <FontAwesome name="apple" size={20} color="#000" />
+            </TouchableOpacity>
+          )}
         </View>
-
       </View>
     </SafeAreaView>
   );
@@ -91,32 +232,26 @@ export default function LoginScreen({ navigation }) {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#fff' },
   container: { flex: 1, padding: 20, alignItems: 'center' },
-
   header: { alignItems: 'center' },
-
   title: {
     fontSize: 22,
     fontFamily: 'Roboto_700Bold',
     marginTop: 16,
     textAlign: 'center',
   },
-
   sub: {
     color: '#9A9A9A',
     marginTop: 8,
     textAlign: 'center',
     fontFamily: 'Roboto_400Regular',
   },
-
   rowBetween: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginVertical: 12,
   },
-
   remember: { flexDirection: 'row', alignItems: 'center' },
-
   radio: {
     width: 18,
     height: 18,
@@ -125,28 +260,24 @@ const styles = StyleSheet.create({
     borderColor: '#ccc',
     marginRight: 8,
   },
-
   remTxt: { color: '#555', fontFamily: 'Roboto_400Regular' },
-
   forgot: { color: '#29A9E0', fontSize: 13, fontFamily: 'Roboto_500Medium' },
-
   link: { marginTop: 12 },
-
   linkText: { color: '#777', fontFamily: 'Roboto_400Regular' },
-
-  sepWrap: { width: '100%', flexDirection: 'row', alignItems: 'center', marginTop: 18 },
-
+  sepWrap: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 18,
+  },
   line: { flex: 1, height: 1, backgroundColor: '#eee' },
-
   or: { marginHorizontal: 10, color: '#999', fontFamily: 'Roboto_400Regular' },
-
   socialRow: {
     flexDirection: 'row',
     marginTop: 18,
-    justifyContent: 'space-between',
-    width: '60%',
+    justifyContent: 'center',
+    gap: 20,
   },
-
   socialBtn: {
     width: 56,
     height: 56,
