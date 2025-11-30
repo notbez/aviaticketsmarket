@@ -1,19 +1,36 @@
 // flights.service.ts
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 
 @Injectable()
 export class FlightsService {
-  private readonly baseUrl = 'https://api-test.onelya.ru/';
-  private readonly login = 'trevel_test';
-  private readonly password = 'hldKMo@9';
-  private readonly pos = 'trevel_test'; // <<< ОБЯЗАТЕЛЬНО ЗАМЕНИТЬ
+  private readonly logger = new Logger(FlightsService.name);
+  private readonly baseUrl =
+    process.env.ONELYA_BASE_URL || 'https://test.onelya.ru/api';
+  private readonly login = process.env.ONELYA_LOGIN || '';
+  private readonly password = process.env.ONELYA_PASSWORD || '';
+  private readonly pos = process.env.ONELYA_POS || 'trevel_test';
 
-  constructor(private readonly http: HttpService) {}
+  constructor(private readonly http: HttpService) {
+    // Проверка и предупреждения о пустых переменных
+    if (!this.login) {
+      this.logger.warn('ONELYA_LOGIN is not set, using empty string');
+    }
+    if (!this.password) {
+      this.logger.warn('ONELYA_PASSWORD is not set, using empty string');
+    }
+    if (!this.pos || this.pos === 'trevel_test') {
+      this.logger.warn('ONELYA_POS is not set or using default value');
+    }
+    this.logger.log(`Onelya baseUrl: ${this.baseUrl}`);
+  }
 
   async search(query: any) {
     const { from, to, date } = query;
+
+    const url = `${this.baseUrl}/Avia/V1/Search/RoutePricing`;
+    this.logger.log(`[Onelya] POST ${url} - Search: ${from} → ${to} on ${date}`);
 
     const body = {
       AdultQuantity: 1,
@@ -38,28 +55,41 @@ export class FlightsService {
       'base64',
     );
 
+    this.logger.debug(`[Onelya] Request payload: ${JSON.stringify(body)}`);
+
     try {
       const response = await firstValueFrom(
-        this.http.post(
-          `${this.baseUrl}/Avia/V1/Search/RoutePricing`,
-          body,
-          {
-            headers: {
-              Authorization: `Basic ${token}`,
-              Pos: this.pos,
-              'Content-Type': 'application/json',
-            },
+        this.http.post(url, body, {
+          headers: {
+            Authorization: `Basic ${token}`,
+            Pos: this.pos,
+            'Content-Type': 'application/json',
           },
-        ),
+          timeout: 30000,
+        }),
       );
 
-      return response.data;
-    } catch (error) {
-      console.error('Onelya error:', error?.response?.data || error);
+      this.logger.log(`[Onelya] Search response status: ${response.status}`);
+      this.logger.debug(`[Onelya] Response data keys: ${Object.keys(response.data || {}).join(', ')}`);
+
+      return {
+        ...response.data,
+        mock: false,
+      };
+    } catch (error: any) {
+      const errorMessage = error?.response?.data || error?.message || String(error);
+      const errorStatus = error?.response?.status;
+      this.logger.error(
+        `[Onelya] Search failed: ${errorMessage}`,
+        errorStatus ? `Status: ${errorStatus}` : '',
+      );
+      
+      // Возвращаем мок-данные с пометкой
       return {
         error: true,
         mock: true,
         results: [],
+        message: 'Onelya API недоступен, возвращены мок-данные',
       };
     }
   }

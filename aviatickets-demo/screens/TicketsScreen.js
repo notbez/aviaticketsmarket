@@ -1,6 +1,7 @@
 // screens/TicketScreen.js
 import React from 'react';
 import { View, Text, TouchableOpacity, Linking, StyleSheet } from 'react-native';
+import { API_BASE } from '../constants/api';
 
 export default function TicketScreen({ route }) {
   // Исправлено: безопасная выборка booking
@@ -14,7 +15,7 @@ export default function TicketScreen({ route }) {
     );
   }
 
-  const pdfUrl = `https://airtickets-bcpu.onrender.com/booking/${booking.id}/pdf`;
+  const pdfUrl = `${API_BASE}/booking/${booking.id}/pdf`;
 
   const openPdf = () => {
     Linking.openURL(pdfUrl);

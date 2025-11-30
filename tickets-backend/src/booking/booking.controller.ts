@@ -15,21 +15,12 @@ export class BookingController {
   @Post('create')
   public async create(@Body() body: any) {
     const res = await this.bookingService.create(body);
-  
-    if (res.success) {
-      return {
-        ok: true,
-        booking: res.booking,
-        raw: res.raw,
-      };
-    } else if ('error' in res) {
-      return {
-        ok: false,
-        booking: res.booking ?? null,
-        error: res.error,
-        raw: res.raw,
-      };
-    }
+    return {
+      ok: !!res.success,
+      booking: res.booking || null,
+      raw: res.raw || null,
+      error: res.success === false ? (res.error || null) : null,
+    };
   }
 
   @Get(':id/pdf')

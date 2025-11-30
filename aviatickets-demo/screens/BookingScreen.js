@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, Button, TextInput, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { API_BASE } from '../constants/api';
 
 export default function BookingScreen({ route, navigation }) {
   const insets = useSafeAreaInsets();   // ← допускается только здесь!
@@ -15,7 +16,7 @@ export default function BookingScreen({ route, navigation }) {
         contact: { email },
       };
 
-      const res = await fetch('https://airtickets-bcpu.onrender.com/booking/create', {
+      const res = await fetch(`${API_BASE}/booking/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -25,7 +25,8 @@
     "extra": {
       "eas": {
         "projectId": "cbd50dd3-8e92-4031-bf47-11d29180a0ba"
-      }
+      },
+      "apiBase": "https://airtickets-bcpu.onrender.com"
     },
     "plugins": [
       "expo-font"

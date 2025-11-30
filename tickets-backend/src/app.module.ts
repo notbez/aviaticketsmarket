@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { FlightsModule } from './flights/flights.module';
 import { BookingModule } from './booking/booking.module';
 import { AuthModule } from './auth/auth.module';
+import { OnelyaModule } from './onelya/onelya.module';
 import { HttpModule } from '@nestjs/axios';
 
 @Module({
@@ -13,6 +14,7 @@ import { HttpModule } from '@nestjs/axios';
     FlightsModule,
     BookingModule,
     AuthModule,
+    OnelyaModule,
   ],
 })
 export class AppModule {}
