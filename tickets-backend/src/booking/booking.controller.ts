@@ -6,41 +6,56 @@ import PDFDocument from 'pdfkit';
 import * as streamBuffers from 'stream-buffers';
 import * as path from 'path';
 import * as fs from 'fs';
-import bwipjs from 'bwip-js';
+import * as bwipjs from 'bwip-js';
 
 @Controller('booking')
 export class BookingController {
   constructor(private readonly bookingService: BookingService) {}
 
   @Post('create')
-  async create(@Body() body: any) {
-    // используем унифицированный create() с попыткой Onelya и fallback'ом
+  public async create(@Body() body: any) {
     const res = await this.bookingService.create(body);
-    // нормализуем ответ для фронта
+  
     if (res.success) {
-      return { ok: true, booking: res.booking };
-    } else {
-      return { ok: false, booking: res.booking, error: res.error, raw: res.raw };
+      return {
+        ok: true,
+        booking: res.booking,
+        raw: res.raw,
+      };
+    } else if ('error' in res) {
+      return {
+        ok: false,
+        booking: res.booking ?? null,
+        error: res.error,
+        raw: res.raw,
+      };
     }
   }
 
   @Get(':id/pdf')
-  async getPdf(@Param('id') id: string, @Res() res: Response) {
+  public async getPdf(@Param('id') id: string, @Res() res: Response) {
     const booking = this.bookingService.getById(id);
     if (!booking) {
       res.status(404).send('Booking not found');
       return;
     }
 
+    // booking теперь гарантированно не undefined (narrowing выше)
     const doc = new PDFDocument({ size: 'A4', margin: 28 });
     const writable = new streamBuffers.WritableStreamBuffer();
     doc.pipe(writable);
 
     const fontPath = path.resolve(__dirname, '..', 'assets', 'fonts', 'NotoSans-Regular.ttf');
-    if (fs.existsSync(fontPath)) {
-      doc.registerFont('Noto', fontPath);
-      doc.font('Noto');
-    } else {
+    try {
+      if (fs.existsSync(fontPath)) {
+        // @ts-ignore -- pdfkit types sometimes require .registerFont signature as any
+        doc.registerFont('Noto', fontPath);
+        doc.font('Noto');
+      } else {
+        doc.font('Helvetica');
+      }
+    } catch (err) {
+      // если registerFont упадёт — используем дефолт
       doc.font('Helvetica');
     }
 
@@ -89,9 +104,10 @@ export class BookingController {
 
     doc.moveDown(1);
 
-    const seat = booking.seat || '12A';
-    const gate = booking.gate || 'B5';
-    const boardTime = booking.boardingTime || '08:45';
+    // безопасные значения для seat/gate/boardingTime (booking определён выше)
+    const seat = booking.seat ?? '12A';
+    const gate = booking.gate ?? 'B5';
+    const boardTime = booking.boardingTime ?? '08:45';
 
     const startX = doc.x;
     const columnWidth =
@@ -135,6 +151,8 @@ export class BookingController {
       });
       doc.moveDown(2);
     } catch (e) {
+      // если штрихкод упал — логируем, но продолжаем
+      // eslint-disable-next-line no-console
       console.error('Barcode error', e);
     }
 

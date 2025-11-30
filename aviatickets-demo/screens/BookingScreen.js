@@ -30,19 +30,17 @@ export default function BookingScreen({ route, navigation }) {
           segments: flight.segments, // если есть
         }),
       });
-      const json = await res.json();
-      if (json.ok && json.booking) {
-        navigation.navigate("Ticket", { booking: json.booking });
-      } else {
-        alert('Ошибка бронирования');
-      }
 
       if (!res.ok) {
         throw new Error('Server response not OK');
       }
 
-      const data = await res.json();
-      navigation.navigate('Ticket', { booking: data });
+      const json = await res.json();
+      if (json.ok && json.booking) {
+        navigation.navigate("Ticket", { booking: json.booking });
+      } else {
+        alert('Ошибка бронирования: ' + (json.error || 'Неизвестная ошибка'));
+      }
     } catch (err) {
       alert('Ошибка соединения с сервером');
       console.error('Booking error:', err);

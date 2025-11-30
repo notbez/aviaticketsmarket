@@ -22,6 +22,10 @@ export interface Booking {
   boardingTime?: string;
 }
 
+export type CreateResult =
+  | { success: true; booking: Booking; raw?: any }
+  | { success: false; booking: Booking; error?: any; raw?: any };
+
 @Injectable()
 export class BookingService {
   private readonly logger = new Logger(BookingService.name);
@@ -31,14 +35,13 @@ export class BookingService {
   private readonly baseUrl =
     process.env.ONELYA_BASE_URL || 'https://test.onelya.ru/api';
   private readonly login = process.env.ONELYA_LOGIN || 'trevel_manager';
-  private readonly password =
-    process.env.ONELYA_PASSWORD || 'Dy0Y(CWo';
+  private readonly password = process.env.ONELYA_PASSWORD || 'Dy0Y(CWo';
   private readonly pos = process.env.ONELYA_POS || 'ВАШ_POS_ID';
 
   constructor(private readonly http: HttpService) {}
 
   // --- Local create (fallback) ---
-  createLocal(body: any): Booking {
+  public createLocal(body: any): Booking {
     const id = randomUUID();
     const booking: Booking = {
       id,
@@ -64,12 +67,13 @@ export class BookingService {
 
   // --- Public create (used by controller) ---
   // Возвращает { success: boolean, booking, raw?, error? }
-  async create(body: any) {
+  public async create(body: any): Promise<CreateResult> {
+    // Основной путь — попытаться создать в Onelya, в случае ошибки — fallback на локальный
     return this.createOnelya(body);
   }
 
   // --- Create reservation in Onelya (best-effort) ---
-  async createOnelya(body: any) {
+  public async createOnelya(body: any): Promise<CreateResult> {
     const url = `${this.baseUrl}/Order/V1/Reservation/Create`;
     const auth =
       'Basic ' + Buffer.from(`${this.login}:${this.password}`).toString('base64');
@@ -121,7 +125,7 @@ export class BookingService {
         data?.Id ||
         randomUUID();
 
-      // Сохраняем в локальном сторе (с заполененными seat/gate/boardingTime при наличии)
+      // Сохраняем в локальном сторе (с заполненными seat/gate/boardingTime при наличии)
       const id = randomUUID();
       const booking: Booking = {
         id,
@@ -142,7 +146,9 @@ export class BookingService {
       };
 
       this.bookings.push(booking);
-      this.logger.log(`Created onelya booking ${providerBookingId} (local ${id})`);
+      this.logger.log(
+        `Created onelya booking ${providerBookingId} (local ${id})`,
+      );
 
       return { success: true, booking, raw: data };
     } catch (err) {
@@ -161,7 +167,7 @@ export class BookingService {
   }
 
   // --- Confirm reservation in Onelya ---
-  async confirmOnelya(providerBookingId: string) {
+  public async confirmOnelya(providerBookingId: string) {
     const url = `${this.baseUrl}/Order/V1/Reservation/Confirm`;
     const auth =
       'Basic ' + Buffer.from(`${this.login}:${this.password}`).toString('base64');
@@ -193,12 +199,15 @@ export class BookingService {
         'Onelya confirm error',
         err?.response?.data || err?.message || err,
       );
-      return { success: false, error: err?.response?.data || err?.message || String(err) };
+      return {
+        success: false,
+        error: err?.response?.data || err?.message || String(err),
+      };
     }
   }
 
   // --- Get blank / ticket PDF or JSON ---
-  async getBlank(providerBookingId: string) {
+  public async getBlank(providerBookingId: string) {
     const url1 = `${this.baseUrl}/Avia/V1/Reservation/Blank`;
     const url2 = `${this.baseUrl}/Order/V1/Reservation/Blank`;
     const auth =
@@ -209,13 +218,21 @@ export class BookingService {
     try {
       let res = await firstValueFrom(
         this.http.post<any>(url1, payload, {
-          headers: { Authorization: auth, Pos: this.pos, 'Content-Type': 'application/json' },
+          headers: {
+            Authorization: auth,
+            Pos: this.pos,
+            'Content-Type': 'application/json',
+          },
           responseType: 'arraybuffer',
           timeout: 60000,
         }),
       );
 
-      if (res.headers && res.headers['content-type'] && res.headers['content-type'].includes('application/pdf')) {
+      if (
+        res.headers &&
+        res.headers['content-type'] &&
+        res.headers['content-type'].includes('application/pdf')
+      ) {
         return { type: 'pdf', buffer: Buffer.from(res.data) };
       } else {
         return { type: 'json', data: res.data };
@@ -225,31 +242,45 @@ export class BookingService {
       try {
         let res2 = await firstValueFrom(
           this.http.post<any>(url2, payload, {
-            headers: { Authorization: auth, Pos: this.pos, 'Content-Type': 'application/json' },
+            headers: {
+              Authorization: auth,
+              Pos: this.pos,
+              'Content-Type': 'application/json',
+            },
             responseType: 'arraybuffer',
             timeout: 60000,
           }),
         );
 
-        if (res2.headers && res2.headers['content-type'] && res2.headers['content-type'].includes('application/pdf')) {
+        if (
+          res2.headers &&
+          res2.headers['content-type'] &&
+          res2.headers['content-type'].includes('application/pdf')
+        ) {
           return { type: 'pdf', buffer: Buffer.from(res2.data) };
         } else {
           return { type: 'json', data: res2.data };
         }
       } catch (err2) {
-        this.logger.error('Both blank endpoints failed', err2?.response?.data || err2?.message || err2);
-        return { error: true, message: err2?.response?.data || err2?.message || 'Blank failed' };
+        this.logger.error(
+          'Both blank endpoints failed',
+          err2?.response?.data || err2?.message || err2,
+        );
+        return {
+          error: true,
+          message: err2?.response?.data || err2?.message || 'Blank failed',
+        };
       }
     }
   }
 
   // get booking by our internal id
-  getById(id: string): Booking | undefined {
+  public getById(id: string): Booking | undefined {
     return this.bookings.find((b) => b.id === id);
   }
 
   // find booking by provider id
-  findByProviderId(providerId: string) {
+  public findByProviderId(providerId: string) {
     return this.bookings.find((b) => b.providerBookingId === providerId);
   }
 }

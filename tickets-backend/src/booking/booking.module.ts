@@ -1,3 +1,4 @@
+// tickets-backend/src/booking/booking.module.ts
 import { Module } from '@nestjs/common';
 import { BookingController } from './booking.controller';
 import { BookingService } from './booking.service';
