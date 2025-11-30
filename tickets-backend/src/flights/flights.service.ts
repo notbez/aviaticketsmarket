@@ -8,8 +8,8 @@ export class FlightsService {
   private readonly logger = new Logger(FlightsService.name);
   private readonly baseUrl =
     process.env.ONELYA_BASE_URL || 'https://test.onelya.ru/api';
-  private readonly login = process.env.ONELYA_LOGIN || '';
-  private readonly password = process.env.ONELYA_PASSWORD || '';
+  private readonly login = process.env.ONELYA_LOGIN || 'trevel_test';
+  private readonly password = process.env.ONELYA_PASSWORD || 'hldKMo@9';
   private readonly pos = process.env.ONELYA_POS || 'trevel_test';
 
   constructor(private readonly http: HttpService) {
