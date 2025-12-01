@@ -28,7 +28,6 @@ export default function SettingsScreen({ navigation }) {
             <Text style={styles.back}>‹</Text>
           </TouchableOpacity>
           <Text style={styles.title}>Настройки</Text>
-          <View style={{ width: 24 }} />
         </View>
 
         <View style={{ height: 12 }} />
@@ -68,10 +67,9 @@ const styles = StyleSheet.create({
     height: 56,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
   },
   back: { fontSize: 28, color: '#222', paddingHorizontal: 8 },
-  title: { fontSize: 20, fontWeight: '700', textAlign: 'center' },
+  title: { fontSize: 20, fontWeight: '700', flex: 1 },
 
   row: {
     backgroundColor: '#fff',

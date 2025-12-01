@@ -16,11 +16,13 @@ import { FontAwesome } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { API_BASE } from '../constants/api';
 import { useAuth } from '../contexts/AuthContext';
-import * as Google from 'expo-auth-session/providers/google';
+// ❌ Google auth отключено — удалено
+// import * as Google from 'expo-auth-session/providers/google';
 import * as AppleAuthentication from 'expo-apple-authentication';
-import * as WebBrowser from 'expo-web-browser';
+// ❌ WebBrowser нужен только для Google
+// import * as WebBrowser from 'expo-web-browser';
 
-WebBrowser.maybeCompleteAuthSession();
+// WebBrowser.maybeCompleteAuthSession(); // ❌ больше не нужно
 
 export default function LoginScreen({ navigation }) {
   const insets = useSafeAreaInsets();
@@ -29,21 +31,30 @@ export default function LoginScreen({ navigation }) {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const [request, response, promptAsync] = Google.useAuthRequest({
-    iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
-    androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
-    webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
-  });
+  // ❌ Полностью удалён Google.useAuthRequest()
+  // const [request, response, promptAsync] = Google.useAuthRequest({...});
 
-  React.useEffect(() => {
-    if (response?.type === 'success') {
-      handleGoogleAuth(response.authentication.idToken);
-    }
-  }, [response]);
+  const validateEmail = (email) => {
+    const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return re.test(email);
+  };
 
   const handleSignIn = async () => {
-    if (!email || !password) {
+    // Валидация полей
+    if (!email.trim() || !password.trim()) {
       Alert.alert('Ошибка', 'Заполните все поля');
+      return;
+    }
+
+    // Валидация email
+    if (!validateEmail(email)) {
+      Alert.alert('Ошибка', 'Введите корректный email адрес');
+      return;
+    }
+
+    // Валидация пароля (минимум 6 символов)
+    if (password.length < 6) {
+      Alert.alert('Ошибка', 'Пароль должен быть не менее 6 символов');
       return;
     }
 
@@ -52,13 +63,27 @@ export default function LoginScreen({ navigation }) {
       const res = await fetch(`${API_BASE}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
       });
 
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.message || 'Ошибка входа');
+        // Обработка различных типов ошибок
+        let errorMessage = 'Ошибка входа';
+        if (data.message) {
+          errorMessage = data.message;
+        } else if (data.error) {
+          errorMessage = typeof data.error === 'string' ? data.error : data.error.message || errorMessage;
+        } else if (res.status === 401) {
+          errorMessage = 'Неверный email или пароль';
+        }
+        throw new Error(errorMessage);
+      }
+
+      // Проверяем наличие необходимых полей в ответе
+      if (!data.accessToken || !data.user) {
+        throw new Error('Некорректный ответ от сервера');
       }
 
       await login(data.accessToken, data.user);
@@ -66,33 +91,6 @@ export default function LoginScreen({ navigation }) {
     } catch (error) {
       Alert.alert('Ошибка', error.message || 'Не удалось войти');
       console.error('Login error:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleGoogleAuth = async (idToken) => {
-    if (!idToken) return;
-
-    setLoading(true);
-    try {
-      const res = await fetch(`${API_BASE}/auth/google`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ idToken }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.message || 'Ошибка авторизации через Google');
-      }
-
-      await login(data.accessToken, data.user);
-      navigation.replace('MainTabs');
-    } catch (error) {
-      Alert.alert('Ошибка', error.message || 'Не удалось войти через Google');
-      console.error('Google auth error:', error);
     } finally {
       setLoading(false);
     }
@@ -138,10 +136,7 @@ export default function LoginScreen({ navigation }) {
         }
       }
     } catch (e) {
-      if (e.code === 'ERR_CANCELED') {
-        // User canceled
-        return;
-      }
+      if (e.code === 'ERR_CANCELED') return;
       Alert.alert('Ошибка', 'Не удалось войти через Apple');
       console.error('Apple auth error:', e);
     }
@@ -200,7 +195,8 @@ export default function LoginScreen({ navigation }) {
           onPress={() => navigation.navigate('SignUp')}
         >
           <Text style={styles.linkText}>
-            Нет аккаунта? <Text style={{ color: '#29A9E0' }}>Зарегистрироваться</Text>
+            Нет аккаунта?{' '}
+            <Text style={{ color: '#29A9E0' }}>Зарегистрироваться</Text>
           </Text>
         </TouchableOpacity>
 
@@ -210,14 +206,8 @@ export default function LoginScreen({ navigation }) {
           <View style={styles.line} />
         </View>
 
+        {/* ❌ Google кнопка удалена */}
         <View style={styles.socialRow}>
-          <TouchableOpacity
-            style={styles.socialBtn}
-            onPress={() => promptAsync()}
-            disabled={!request}
-          >
-            <FontAwesome name="google" size={20} color="#DB4437" />
-          </TouchableOpacity>
           {Platform.OS === 'ios' && (
             <TouchableOpacity style={styles.socialBtn} onPress={handleAppleAuth}>
               <FontAwesome name="apple" size={20} color="#000" />

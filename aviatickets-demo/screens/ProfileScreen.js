@@ -11,14 +11,29 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons, FontAwesome5 } from '@expo/vector-icons';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function ProfileScreen({ navigation }) {
   const insets = useSafeAreaInsets();
+  const { logout } = useAuth();
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+      // Навигация будет обработана автоматически через NavigationWrapper в App.js
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Login' }],
+      });
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
+  };
 
   const menu = [
     { key: 'account', title: 'Аккаунт', icon: <MaterialIcons name="person" size={20} color="#0277bd" />, screen: 'Account' },
     { key: 'payments', title: 'История платежей', icon: <FontAwesome5 name="wallet" size={18} color="#0277bd" />, screen: 'Payments' },
-    { key: 'support', title: 'Поддержка', icon: <MaterialIcons name="support-agent" size={20} color="#0277bd" />, screen: 'Support' },
+    { key: 'support', title: 'Поддержка', icon: <MaterialIcons name="support-agent" size={20} color="#0277bd" />, screen: 'SupportOptions' },
     { key: 'settings', title: 'Настройки', icon: <MaterialIcons name="settings" size={20} color="#0277bd" />, screen: 'Settings' },
   ];
 
@@ -67,7 +82,7 @@ export default function ProfileScreen({ navigation }) {
             </TouchableOpacity>
           ))}
 
-          <TouchableOpacity style={[styles.menuItem, styles.logout]} onPress={() => console.log('logout')}>
+          <TouchableOpacity style={[styles.menuItem, styles.logout]} onPress={handleLogout}>
             <View style={[styles.menuIcon, { backgroundColor: '#ffebee' }]}>
               <MaterialIcons name="exit-to-app" size={20} color="#e53935" />
             </View>
@@ -82,8 +97,8 @@ export default function ProfileScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#fff' },
-  header: { paddingHorizontal: 16, marginBottom: 18, flexDirection: 'row', justifyContent: 'space-between' },
-  headerTitle: { fontSize: 20, fontWeight: '700', color: '#111' },
+  header: { paddingHorizontal: 16, marginBottom: 18, flexDirection: 'row', alignItems: 'center' },
+  headerTitle: { fontSize: 20, fontWeight: '700', color: '#111', flex: 1 },
   topCard: {
     marginHorizontal: 16, backgroundColor: '#fff', borderRadius: 14, padding: 16,
     flexDirection: 'row', alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 8, elevation: 3,
@@ -103,11 +118,12 @@ const styles = StyleSheet.create({
       borderRadius: 12,
       marginBottom: 12,
       
-      // вот так меняем тень, как на главной
+      // Тени - серый цвет, непрозрачность 0.2, без смещения
       shadowColor: '#000',
-      shadowOpacity: 0.03,
-      shadowRadius: 6,
-      elevation: 1,
+      shadowOpacity: 0.2,
+      shadowRadius: 4,
+      shadowOffset: { width: 0, height: 0 },
+      elevation: 4,
     },
   menuIcon: { width: 40, height: 40, borderRadius: 10, backgroundColor: '#e3f2fd', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
   menuTitle: { flex: 1, fontSize: 16, color: '#111' },

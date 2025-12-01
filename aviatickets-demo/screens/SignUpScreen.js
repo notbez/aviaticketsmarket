@@ -98,7 +98,21 @@ export default function SignUpScreen({ navigation }) {
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.message || 'Ошибка регистрации');
+        // Обработка различных типов ошибок
+        let errorMessage = 'Ошибка регистрации';
+        if (data.message) {
+          errorMessage = data.message;
+        } else if (data.error) {
+          errorMessage = typeof data.error === 'string' ? data.error : data.error.message || errorMessage;
+        } else if (Array.isArray(data.message)) {
+          errorMessage = data.message.join(', ');
+        }
+        throw new Error(errorMessage);
+      }
+
+      // Проверяем наличие необходимых полей в ответе
+      if (!data.accessToken || !data.user) {
+        throw new Error('Некорректный ответ от сервера');
       }
 
       // Save token and user

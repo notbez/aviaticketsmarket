@@ -36,6 +36,7 @@ export default function HomeScreen() {
 
   const [cls, setCls] = useState('Эконом');
   const [showClass, setShowClass] = useState(false);
+  const [isRoundTrip, setIsRoundTrip] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const bottomSheetRef = useRef(null);
@@ -136,13 +137,33 @@ export default function HomeScreen() {
         {/* CARD */}
         <View style={styles.card}>
           {/* TABS */}
-          <View style={styles.tabs}>
-            <TouchableOpacity style={styles.tabActive}>
-              <Text style={styles.tabActiveTxt}>В одну сторону</Text>
+          <View style={styles.tabsContainer}>
+            <TouchableOpacity
+              style={[styles.tab, !isRoundTrip && styles.tabActive]}
+              onPress={() => setIsRoundTrip(false)}
+            >
+              <Text
+                style={[
+                  styles.tabText,
+                  !isRoundTrip && styles.tabTextActive,
+                ]}
+              >
+                В одну сторону
+              </Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.tab}>
-              <Text style={styles.tabTxt}>Туда-обратно</Text>
+            <TouchableOpacity
+              style={[styles.tab, isRoundTrip && styles.tabActive]}
+              onPress={() => setIsRoundTrip(true)}
+            >
+              <Text
+                style={[
+                  styles.tabText,
+                  isRoundTrip && styles.tabTextActive,
+                ]}
+              >
+                Туда-обратно
+              </Text>
             </TouchableOpacity>
           </View>
 
@@ -307,38 +328,34 @@ const styles = StyleSheet.create({
     paddingBottom: 30,
   },
 
-  tabs: {
+  tabsContainer: {
     flexDirection: 'row',
     marginBottom: 20,
-    gap: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+
+  tab: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
   },
 
   tabActive: {
-    flex: 1,
-    backgroundColor: '#0277bd',
-    paddingVertical: 10, // ← было 14
-    borderRadius: 14,
-    alignItems: 'center',
-  },
-  
-  tab: {
-    flex: 1,
-    backgroundColor: '#E8E8E8',
-    paddingVertical: 10, // ← было 14
-    borderRadius: 14,
-    alignItems: 'center',
+    borderBottomColor: '#0277bd',
   },
 
-  tabActiveTxt: {
-    color: '#fff',
+  tabText: {
+    fontSize: 14,
+    color: '#999',
+    fontWeight: '500',
+  },
+
+  tabTextActive: {
+    color: '#0277bd',
     fontWeight: '700',
-    fontSize: 16,
-  },
-
-  tabTxt: {
-    color: '#666',
-    fontWeight: '600',
-    fontSize: 16,
   },
 
   fieldLabel: {

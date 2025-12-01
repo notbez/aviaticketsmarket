@@ -10,11 +10,11 @@
  * @component App
  */
 
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { View, ActivityIndicator, StatusBar } from 'react-native';
 import RootNavigator from './navigation/RootNavigation';
 import { NavigationContainer } from '@react-navigation/native';
-import { AuthProvider } from './contexts/AuthContext';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
 
 import {
   useFonts,
@@ -22,6 +22,38 @@ import {
   Roboto_500Medium,
   Roboto_700Bold,
 } from '@expo-google-fonts/roboto';
+
+/**
+ * NavigationWrapper - обертка для навигации с проверкой авторизации
+ */
+function NavigationWrapper() {
+  const { token, loading } = useAuth();
+  const navigationRef = useRef(null);
+
+  useEffect(() => {
+    if (!loading && navigationRef.current) {
+      if (!token) {
+        // Если пользователь не авторизован, показываем экран входа
+        navigationRef.current.reset({
+          index: 0,
+          routes: [{ name: 'Login' }],
+        });
+      } else {
+        // Если пользователь авторизован, показываем главный экран
+        navigationRef.current.reset({
+          index: 0,
+          routes: [{ name: 'MainTabs' }],
+        });
+      }
+    }
+  }, [token, loading]);
+
+  return (
+    <NavigationContainer ref={navigationRef}>
+      <RootNavigator />
+    </NavigationContainer>
+  );
+}
 
 /**
  * Главный компонент приложения
@@ -49,12 +81,9 @@ export default function App() {
 
   // Когда шрифты загружены, рендерим основное приложение
   // AuthProvider оборачивает все приложение для доступа к состоянию авторизации
-  // NavigationContainer обеспечивает навигацию между экранами
   return (
     <AuthProvider>
-      <NavigationContainer>
-        <RootNavigator />
-      </NavigationContainer>
+      <NavigationWrapper />
     </AuthProvider>
   );
 }

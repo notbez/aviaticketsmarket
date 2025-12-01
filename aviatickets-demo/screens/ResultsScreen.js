@@ -43,7 +43,7 @@ export default function ResultsScreen({ navigation }) {
           <View style={styles.cardWrapper}>
             <FlightCard 
               item={item} 
-              onBook={() => navigation.navigate('MainTabs')}
+              onBook={() => navigation.navigate('FlightDetails', { flight: item })}
             />
           </View>
         )}

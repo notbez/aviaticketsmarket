@@ -29,6 +29,11 @@ import AccountScreen from '../screens/AccountScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import FaqScreen from '../screens/FaqScreen';
 import SupportScreen from '../screens/SupportScreen';
+import SupportOptionsScreen from '../screens/SupportOptionsScreen';
+import PaymentsScreen from '../screens/PaymentsScreen';
+import FlightDetailsScreen from '../screens/FlightDetailsScreen';
+import SeatSelectionScreen from '../screens/SeatSelectionScreen';
+import PassengerInfoScreen from '../screens/PassengerInfoScreen';
 
 const Stack = createStackNavigator();
 
@@ -39,23 +44,31 @@ const Stack = createStackNavigator();
  */
 export default function RootNavigator() {
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
-      {/* Главный экран с нижними вкладками (Home, Tickets, Profile) */}
-      <Stack.Screen name="MainTabs" component={BottomTabs} />
-
+    <Stack.Navigator 
+      screenOptions={{ headerShown: false }}
+      initialRouteName="Login"
+    >
       {/* Экраны авторизации */}
       <Stack.Screen name="Login" component={LoginScreen} />
       <Stack.Screen name="SignUp" component={SignUpScreen} />
+
+      {/* Главный экран с нижними вкладками (Home, Tickets, Profile) */}
+      <Stack.Screen name="MainTabs" component={BottomTabs} />
       
       {/* Экраны поиска и бронирования */}
       <Stack.Screen name="Results" component={ResultsScreen} />
       <Stack.Screen name="SelectCity" component={SelectCityScreen} />
+      <Stack.Screen name="FlightDetails" component={FlightDetailsScreen} />
+      <Stack.Screen name="SeatSelection" component={SeatSelectionScreen} />
+      <Stack.Screen name="PassengerInfo" component={PassengerInfoScreen} />
       
       {/* Экраны профиля и настроек */}
       <Stack.Screen name="Account" component={AccountScreen} />
+      <Stack.Screen name="Payments" component={PaymentsScreen} />
       <Stack.Screen name="Settings" component={SettingsScreen} />
       
       {/* Экраны помощи */}
+      <Stack.Screen name="SupportOptions" component={SupportOptionsScreen} />
       <Stack.Screen name="Faq" component={FaqScreen} />
       <Stack.Screen name="Support" component={SupportScreen} />
     </Stack.Navigator>

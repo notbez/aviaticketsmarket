@@ -1,5 +1,5 @@
 // screens/AccountScreen.js
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   SafeAreaView,
   View,
@@ -11,55 +11,181 @@ import {
   Image,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
-
-const initialProfile = {
-  username: 'Wahib Khan',
-  email: 'wahibkhan5959@gmail.com',
-  phone: '+920123456789',
-  password: '••••••••',
-  name: 'Wahib',
-  middleName: 'Khan',
-  gender: 'Мужской',
-  passportNumber: 'EN007H5',
-  country: 'Pakistan',
-  expiryDate: '12-12-2030',
-  avatar: null, // можно передать uri
-};
+import { API_BASE } from '../constants/api';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function AccountScreen({ navigation }) {
-  const [profile, setProfile] = useState({ ...initialProfile });
-  const [savedProfile] = useState({ ...initialProfile }); // in real app savedProfile should come from backend
+  const { token, user, updateUser } = useAuth();
+  const [profile, setProfile] = useState({
+    fullName: '',
+    email: '',
+    phone: '',
+    passportNumber: '',
+    passportCountry: '',
+    passportExpiryDate: '',
+  });
+  const [savedProfile, setSavedProfile] = useState({});
   const [isDirty, setIsDirty] = useState(false);
-  const [genderIndex, setGenderIndex] = useState(0);
-  const genders = ['Мужской', 'Женский', 'Другой', 'Не указано'];
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
-  // detect changes
+  // Загрузка данных пользователя при монтировании
   useEffect(() => {
-    const changed = Object.keys(profile).some(
-      (k) => profile[k] !== savedProfile[k]
-    );
+    loadProfile();
+  }, []);
+
+  // Определение изменений
+  useEffect(() => {
+    const changed = 
+      profile.fullName !== savedProfile.fullName ||
+      profile.phone !== savedProfile.phone ||
+      profile.passportNumber !== savedProfile.passportNumber ||
+      profile.passportCountry !== savedProfile.passportCountry ||
+      profile.passportExpiryDate !== savedProfile.passportExpiryDate;
     setIsDirty(changed);
   }, [profile, savedProfile]);
+
+  const loadProfile = async () => {
+    if (!token) {
+      setLoading(false);
+      Alert.alert('Ошибка', 'Необходима авторизация');
+      return;
+    }
+    
+    try {
+      setLoading(true);
+      const res = await fetch(`${API_BASE}/me`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      
+      if (!res.ok) {
+        if (res.status === 401) {
+          Alert.alert('Ошибка', 'Сессия истекла. Пожалуйста, войдите снова.');
+          setLoading(false);
+          return;
+        }
+        throw new Error(`Ошибка загрузки данных: ${res.status}`);
+      }
+      
+      const data = await res.json();
+      
+      if (!data || typeof data !== 'object') {
+        throw new Error('Некорректные данные от сервера');
+      }
+      
+      // Форматируем дату паспорта для отображения
+      const expiryDate = data.passport?.expiryDate 
+        ? new Date(data.passport.expiryDate).toLocaleDateString('ru-RU', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+          }).replace(/\./g, '-')
+        : '';
+      
+      const profileData = {
+        fullName: data.fullName || '',
+        email: data.email || '',
+        phone: data.phone || '',
+        passportNumber: data.passport?.passportNumber || '',
+        passportCountry: data.passport?.country || '',
+        passportExpiryDate: expiryDate,
+      };
+      
+      setProfile(profileData);
+      setSavedProfile(profileData);
+      
+      // Обновляем контекст
+      if (updateUser) {
+        updateUser({ ...user, ...data });
+      }
+    } catch (error) {
+      console.error('Error loading profile:', error);
+      Alert.alert('Ошибка', 'Не удалось загрузить данные профиля');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const onChange = (key, value) => {
     setProfile((p) => ({ ...p, [key]: value }));
   };
 
-  const onToggleGender = () => {
-    const next = (genderIndex + 1) % genders.length;
-    setGenderIndex(next);
-    onChange('gender', genders[next]);
-  };
+  const onSave = async () => {
+    if (!token) {
+      Alert.alert('Ошибка', 'Необходима авторизация');
+      return;
+    }
 
-  const onSave = () => {
-    // тут отправка на сервер
-    // имитируем сохранение: считаем что сохранили, сбрасываем статус dirty
-    // в реальном приложении — после успешного ответа обновим savedProfile
-    // для демонстрации просто сбрасываем isDirty
-    // eslint-disable-next-line no-alert
-    alert('Данные сохранены');
-    setIsDirty(false);
+    try {
+      setSaving(true);
+      
+      // Парсим дату паспорта
+      let passportExpiryDate = null;
+      if (profile.passportExpiryDate) {
+        const parts = profile.passportExpiryDate.split('-');
+        if (parts.length === 3) {
+          passportExpiryDate = new Date(`${parts[2]}-${parts[1]}-${parts[0]}`);
+        }
+      }
+
+      const updateData = {
+        fullName: profile.fullName,
+        phone: profile.phone,
+        passport: {
+          passportNumber: profile.passportNumber,
+          country: profile.passportCountry,
+          expiryDate: passportExpiryDate,
+        },
+      };
+
+      const res = await fetch(`${API_BASE}/me`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(updateData),
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.message || 'Ошибка сохранения');
+      }
+
+      const updatedUser = await res.json();
+      
+      // Обновляем сохраненный профиль
+      const updatedProfile = {
+        ...profile,
+        passportExpiryDate: updatedUser.passport?.expiryDate
+          ? new Date(updatedUser.passport.expiryDate).toLocaleDateString('ru-RU', {
+              day: '2-digit',
+              month: '2-digit',
+              year: 'numeric',
+            }).replace(/\./g, '-')
+          : '',
+      };
+      
+      setSavedProfile(updatedProfile);
+      setIsDirty(false);
+      
+      // Обновляем контекст
+      if (updateUser) {
+        updateUser({ ...user, ...updatedUser });
+      }
+      
+      Alert.alert('Успешно', 'Данные сохранены');
+    } catch (error) {
+      console.error('Error saving profile:', error);
+      Alert.alert('Ошибка', error.message || 'Не удалось сохранить данные');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -94,115 +220,95 @@ export default function AccountScreen({ navigation }) {
             </View>
 
             <View style={{ marginLeft: 12 }}>
-              <Text style={styles.fullName}>{profile.username}</Text>
-              <Text style={styles.emailSmall}>{profile.email}</Text>
+              <Text style={styles.fullName}>{profile.fullName || 'Загрузка...'}</Text>
+              <Text style={styles.emailSmall}>{profile.email || ''}</Text>
             </View>
           </View>
 
-          {/* Account info section */}
-          <Text style={styles.sectionTitle}>Информация аккаунта</Text>
+          {loading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color="#0277bd" />
+              <Text style={styles.loadingText}>Загрузка данных...</Text>
+            </View>
+          ) : (
+            <>
+              {/* Account info section */}
+              <Text style={styles.sectionTitle}>Информация аккаунта</Text>
 
-          <View style={styles.inputCard}>
-            <Text style={styles.label}>Имя пользователя</Text>
-            <TextInput
-              value={profile.username}
-              onChangeText={(v) => onChange('username', v)}
-              style={styles.input}
-              placeholder="Введите имя пользователя"
-            />
+              <View style={styles.inputCard}>
+                <Text style={styles.label}>ФИО</Text>
+                <TextInput
+                  value={profile.fullName}
+                  onChangeText={(v) => onChange('fullName', v)}
+                  style={styles.input}
+                  placeholder="Введите ФИО"
+                />
 
-            <Text style={styles.label}>Email</Text>
-            <TextInput
-              value={profile.email}
-              onChangeText={(v) => onChange('email', v)}
-              style={styles.input}
-              placeholder="Введите email"
-              keyboardType="email-address"
-              autoCapitalize="none"
-            />
+                <Text style={styles.label}>Email</Text>
+                <TextInput
+                  value={profile.email}
+                  editable={false}
+                  style={[styles.input, styles.disabledInput]}
+                  placeholder="Email"
+                />
 
-            <Text style={styles.label}>Телефон</Text>
-            <TextInput
-              value={profile.phone}
-              onChangeText={(v) => onChange('phone', v)}
-              style={styles.input}
-              placeholder="Введите телефон"
-              keyboardType="phone-pad"
-            />
+                <Text style={styles.label}>Телефон</Text>
+                <TextInput
+                  value={profile.phone}
+                  onChangeText={(v) => onChange('phone', v)}
+                  style={styles.input}
+                  placeholder="Введите телефон"
+                  keyboardType="phone-pad"
+                />
+              </View>
 
-            <Text style={styles.label}>Пароль</Text>
-            <TextInput
-              value={profile.password}
-              onChangeText={(v) => onChange('password', v)}
-              style={styles.input}
-              placeholder="Введите пароль"
-              secureTextEntry
-            />
-          </View>
+              {/* Passport info */}
+              <Text style={styles.sectionTitle}>Паспортные данные</Text>
 
-          {/* Personal info */}
-          <Text style={styles.sectionTitle}>Личная информация</Text>
+              <View style={styles.inputCard}>
+                <Text style={styles.label}>Номер паспорта</Text>
+                <TextInput
+                  value={profile.passportNumber}
+                  onChangeText={(v) => onChange('passportNumber', v)}
+                  style={styles.input}
+                  placeholder="Введите номер паспорта"
+                />
 
-          <View style={styles.inputCard}>
-            <Text style={styles.label}>Имя</Text>
-            <TextInput
-              value={profile.name}
-              onChangeText={(v) => onChange('name', v)}
-              style={styles.input}
-              placeholder="Введите имя"
-            />
+                <Text style={styles.label}>Страна выдачи</Text>
+                <TextInput
+                  value={profile.passportCountry}
+                  onChangeText={(v) => onChange('passportCountry', v)}
+                  style={styles.input}
+                  placeholder="Введите страну выдачи"
+                />
 
-            <Text style={styles.label}>Отчество</Text>
-            <TextInput
-              value={profile.middleName}
-              onChangeText={(v) => onChange('middleName', v)}
-              style={styles.input}
-              placeholder="Введите отчество"
-            />
-
-            <Text style={styles.label}>Пол</Text>
-            <TouchableOpacity onPress={onToggleGender} style={styles.input}>
-              <Text style={{ color: '#222' }}>{profile.gender}</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Passport info */}
-          <Text style={styles.sectionTitle}>Паспортные данные</Text>
-
-          <View style={styles.inputCard}>
-            <Text style={styles.label}>Номер паспорта</Text>
-            <TextInput
-              value={profile.passportNumber}
-              onChangeText={(v) => onChange('passportNumber', v)}
-              style={styles.input}
-              placeholder="Введите номер паспорта"
-            />
-
-            <Text style={styles.label}>Страна</Text>
-            <TextInput
-              value={profile.country}
-              onChangeText={(v) => onChange('country', v)}
-              style={styles.input}
-              placeholder="Введите страну"
-            />
-
-            <Text style={styles.label}>Срок действия</Text>
-            <TextInput
-              value={profile.expiryDate}
-              onChangeText={(v) => onChange('expiryDate', v)}
-              style={styles.input}
-              placeholder="DD-MM-YYYY"
-            />
-          </View>
+                <Text style={styles.label}>Срок действия (ДД-ММ-ГГГГ)</Text>
+                <TextInput
+                  value={profile.passportExpiryDate}
+                  onChangeText={(v) => onChange('passportExpiryDate', v)}
+                  style={styles.input}
+                  placeholder="ДД-ММ-ГГГГ"
+                />
+              </View>
+            </>
+          )}
 
           <View style={{ height: 120 }} />{/* отступ чтобы не перекрыло кнопкой */}
         </ScrollView>
 
         {/* Save button fixed at bottom */}
-        {isDirty && (
+        {isDirty && !loading && (
           <View style={styles.saveWrap}>
-            <TouchableOpacity style={styles.saveBtn} onPress={onSave}>
-              <Text style={styles.saveText}>Сохранить</Text>
+            <TouchableOpacity 
+              style={[styles.saveBtn, saving && styles.saveBtnDisabled]} 
+              onPress={onSave}
+              disabled={saving}
+            >
+              {saving ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={styles.saveText}>Сохранить</Text>
+              )}
             </TouchableOpacity>
           </View>
         )}
@@ -218,11 +324,10 @@ const styles = StyleSheet.create({
     height: 56,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     marginBottom: 8,
   },
   back: { fontSize: 28, color: '#222', paddingHorizontal: 8 },
-  title: { fontSize: 20, fontWeight: '700', textAlign: 'center' },
+  title: { fontSize: 20, fontWeight: '700', flex: 1 },
 
   profileRow: {
     flexDirection: 'row',
@@ -283,4 +388,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   saveText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  saveBtnDisabled: { opacity: 0.6 },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: '#666',
+  },
+  disabledInput: {
+    backgroundColor: '#f5f5f5',
+    color: '#999',
+  },
 });

@@ -1,6 +1,7 @@
 import {
   Controller,
   Put,
+  Get,
   UseGuards,
   Request,
   Body,
@@ -18,6 +19,18 @@ import { UpdateUserDto } from './dto/update-user.dto';
 @UseGuards(JwtAuthGuard)
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
+
+  @Get()
+  async getProfile(@Request() req) {
+    const user = await this.usersService.getUserById(req.user.sub);
+    if (!user) {
+      throw new BadRequestException('User not found');
+    }
+    const userObj = user.toObject();
+    delete userObj.passwordHash;
+    delete userObj.avatar;
+    return userObj;
+  }
 
   @Put()
   async updateProfile(@Request() req, @Body() updateDto: UpdateUserDto) {

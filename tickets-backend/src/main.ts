@@ -12,6 +12,7 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { ValidationPipe } from '@nestjs/common';
 
 /**
  * Функция bootstrap - инициализирует и запускает приложение
@@ -20,6 +21,18 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 async function bootstrap() {
   // Создаем экземпляр NestJS приложения из корневого модуля
   const app = await NestFactory.create(AppModule);
+
+  // Включаем глобальную валидацию для автоматической проверки DTO
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true, // Удаляет свойства, которых нет в DTO
+      forbidNonWhitelisted: true, // Выбрасывает ошибку, если есть лишние свойства
+      transform: true, // Автоматически преобразует типы
+      transformOptions: {
+        enableImplicitConversion: true,
+      },
+    }),
+  );
 
   // Настраиваем Swagger документацию
   // Swagger - это инструмент для автоматической генерации API документации

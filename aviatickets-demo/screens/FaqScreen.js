@@ -41,20 +41,29 @@ export default function FaqScreen({ navigation }) {
 
   const loadFaqs = async () => {
     try {
+      setLoading(true);
       const categoryParam = selectedCategory !== 'all' ? `?category=${selectedCategory}` : '';
       const res = await fetch(`${API_BASE}/faq${categoryParam}`);
+      
+      if (!res.ok) {
+        throw new Error('Failed to load FAQ');
+      }
+      
       const data = await res.json();
-      setFaqs(data);
-      setFilteredFaqs(data);
+      // Убеждаемся, что data - это массив
+      const faqsArray = Array.isArray(data) ? data : [];
+      setFaqs(faqsArray);
     } catch (error) {
       console.error('Error loading FAQ:', error);
+      setFaqs([]); // Устанавливаем пустой массив при ошибке
     } finally {
       setLoading(false);
     }
   };
 
   const filterFaqs = () => {
-    let filtered = faqs;
+    // Убеждаемся, что faqs - это массив
+    let filtered = Array.isArray(faqs) ? [...faqs] : [];
 
     // Filter by category
     if (selectedCategory !== 'all') {
@@ -66,8 +75,8 @@ export default function FaqScreen({ navigation }) {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter(
         (faq) =>
-          faq.question.toLowerCase().includes(query) ||
-          faq.answer.toLowerCase().includes(query)
+          faq.question?.toLowerCase().includes(query) ||
+          faq.answer?.toLowerCase().includes(query)
       );
     }
 
@@ -124,37 +133,33 @@ export default function FaqScreen({ navigation }) {
       </View>
 
       {/* Categories */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.categoriesScroll}
-        contentContainerStyle={styles.categoriesContainer}
-      >
-        {categories.map((cat) => (
-          <TouchableOpacity
-            key={cat.id}
-            style={[
-              styles.categoryChip,
-              selectedCategory === cat.id && styles.categoryChipActive,
-            ]}
-            onPress={() => handleCategoryChange(cat.id)}
-          >
-            <MaterialCommunityIcons
-              name={cat.icon}
-              size={18}
-              color={selectedCategory === cat.id ? '#fff' : '#666'}
-            />
-            <Text
+      <View style={styles.categoriesContainer}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.categoriesScrollContent}
+        >
+          {categories.map((cat) => (
+            <TouchableOpacity
+              key={cat.id}
               style={[
-                styles.categoryText,
-                selectedCategory === cat.id && styles.categoryTextActive,
+                styles.categoryTab,
+                selectedCategory === cat.id && styles.categoryTabActive,
               ]}
+              onPress={() => handleCategoryChange(cat.id)}
             >
-              {cat.name}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+              <Text
+                style={[
+                  styles.categoryText,
+                  selectedCategory === cat.id && styles.categoryTextActive,
+                ]}
+              >
+                {cat.name}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
 
       {/* FAQ List */}
       <ScrollView style={styles.faqList} showsVerticalScrollIndicator={false}>
@@ -162,7 +167,7 @@ export default function FaqScreen({ navigation }) {
           <View style={styles.center}>
             <Text style={styles.loadingText}>Загрузка...</Text>
           </View>
-        ) : filteredFaqs.length === 0 ? (
+        ) : !Array.isArray(filteredFaqs) || filteredFaqs.length === 0 ? (
           <View style={styles.center}>
             <MaterialCommunityIcons name="help-circle-outline" size={64} color="#ccc" />
             <Text style={styles.emptyText}>Вопросы не найдены</Text>
@@ -212,7 +217,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 20,
-    fontFamily: 'Roboto_700Bold',
+    fontWeight: '700',
     flex: 1,
   },
   searchContainer: {
@@ -235,34 +240,32 @@ const styles = StyleSheet.create({
     fontFamily: 'Roboto_400Regular',
     color: '#111',
   },
-  categoriesScroll: {
-    maxHeight: 50,
-  },
   categoriesContainer: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
     paddingHorizontal: 20,
+  },
+  categoriesScrollContent: {
+    paddingVertical: 0,
+  },
+  categoryTab: {
     paddingVertical: 12,
-    gap: 8,
-  },
-  categoryChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: '#f0f0f0',
     marginRight: 8,
-    gap: 6,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
   },
-  categoryChipActive: {
-    backgroundColor: '#29A9E0',
+  categoryTabActive: {
+    borderBottomColor: '#0277bd',
   },
   categoryText: {
     fontSize: 14,
-    fontFamily: 'Roboto_500Medium',
-    color: '#666',
+    color: '#999',
+    fontWeight: '500',
   },
   categoryTextActive: {
-    color: '#fff',
+    color: '#0277bd',
+    fontWeight: '700',
   },
   faqList: {
     flex: 1,
@@ -271,21 +274,29 @@ const styles = StyleSheet.create({
   faqItem: {
     marginBottom: 12,
     borderRadius: 12,
-    backgroundColor: '#f9f9f9',
+    backgroundColor: '#fff',
     overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
   },
   faqQuestion: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
+    paddingVertical: 18,
+    paddingHorizontal: 16,
+    minHeight: 60,
   },
   faqQuestionText: {
     flex: 1,
     fontSize: 16,
-    fontFamily: 'Roboto_500Medium',
+    fontWeight: '600',
     color: '#111',
     marginRight: 12,
+    lineHeight: 22,
   },
   faqAnswer: {
     paddingHorizontal: 16,
