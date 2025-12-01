@@ -1,3 +1,4 @@
+// screen/ResualtsScreen.js
 import React from 'react';
 import { View, Text, FlatList, StyleSheet, SafeAreaView, Image, TouchableOpacity } from 'react-native';
 import FlightCard from '../components/FlightCard';

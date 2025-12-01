@@ -1,5 +1,10 @@
 // screens/HomeScreen.js
-import React, { useState } from 'react';
+import React, { 
+  useState, 
+  useRef,        // ← добавлено
+  useEffect      // ← если используешь
+} from 'react';
+
 import {
   View,
   Text,
@@ -8,6 +13,7 @@ import {
   SafeAreaView,
   ScrollView,
 } from 'react-native';
+
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import LoadingOverlay from '../components/LoadingOverlay';
 import DateTimePicker from '@react-native-community/datetimepicker';
