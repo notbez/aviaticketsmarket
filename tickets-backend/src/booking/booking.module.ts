@@ -5,11 +5,14 @@ import { BookingController } from './booking.controller';
 import { BookingService } from './booking.service';
 import { HttpModule } from '@nestjs/axios';
 import { Booking, BookingSchema } from '../schemas/booking.schema';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [
     HttpModule,
     MongooseModule.forFeature([{ name: Booking.name, schema: BookingSchema }]),
+    // Импортируем AuthModule, чтобы JwtModule/JwtService были доступны для JwtAuthGuard
+    AuthModule,
   ],
   controllers: [BookingController],
   providers: [BookingService],

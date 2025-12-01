@@ -2,17 +2,29 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
+import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class FlightsService {
   private readonly logger = new Logger(FlightsService.name);
-  private readonly baseUrl =
-    process.env.ONELYA_BASE_URL || 'https://test.onelya.ru/api';
-  private readonly login = process.env.ONELYA_LOGIN || 'trevel_test';
-  private readonly password = process.env.ONELYA_PASSWORD || 'hldKMo@9';
-  private readonly pos = process.env.ONELYA_POS || 'trevel_test';
+  private readonly baseUrl: string;
+  private readonly login: string;
+  private readonly password: string;
+  private readonly pos: string;
 
-  constructor(private readonly http: HttpService) {
+  constructor(
+    private readonly http: HttpService,
+    private readonly configService: ConfigService,
+  ) {
+    this.baseUrl =
+      this.configService.get<string>('ONELYA_BASE_URL') ||
+      'https://test.onelya.ru/api';
+    this.login =
+      this.configService.get<string>('ONELYA_LOGIN') || 'trevel_test';
+    this.password =
+      this.configService.get<string>('ONELYA_PASSWORD') || 'hldKMo@9';
+    this.pos = this.configService.get<string>('ONELYA_POS') || 'trevel_test';
+
     // Проверка и предупреждения о пустых переменных
     if (!this.login) {
       this.logger.warn('ONELYA_LOGIN is not set, using empty string');

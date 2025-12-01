@@ -5,6 +5,7 @@ import { Model, Types } from 'mongoose';
 import { randomUUID } from 'crypto';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
+import { ConfigService } from '@nestjs/config';
 import { Booking, BookingDocument } from '../schemas/booking.schema';
 
 export type CreateResult =
@@ -15,17 +16,27 @@ export type CreateResult =
 export class BookingService {
   private readonly logger = new Logger(BookingService.name);
 
-  // Onelya config from env
-  private readonly baseUrl =
-    process.env.ONELYA_BASE_URL || 'https://test.onelya.ru/api';
-  private readonly login = process.env.ONELYA_LOGIN || 'trevel_test';
-  private readonly password = process.env.ONELYA_PASSWORD || 'hldKMo@9';
-  private readonly pos = process.env.ONELYA_POS || 'trevel_test';
+  // Onelya config - читаются через ConfigService, чтобы гарантированно подхватывать .env
+  private readonly baseUrl: string;
+  private readonly login: string;
+  private readonly password: string;
+  private readonly pos: string;
 
   constructor(
     @InjectModel(Booking.name) private bookingModel: Model<BookingDocument>,
     private readonly http: HttpService,
+    private readonly configService: ConfigService,
   ) {
+    // Читаем значения из ConfigService (ConfigModule.forRoot({ isGlobal: true }))
+    this.baseUrl =
+      this.configService.get<string>('ONELYA_BASE_URL') ||
+      'https://test.onelya.ru/api';
+    this.login =
+      this.configService.get<string>('ONELYA_LOGIN') || 'trevel_test';
+    this.password =
+      this.configService.get<string>('ONELYA_PASSWORD') || 'hldKMo@9';
+    this.pos = this.configService.get<string>('ONELYA_POS') || 'trevel_test';
+
     // Проверка и предупреждения о пустых переменных
     if (!this.login || this.login === 'trevel_test') {
       this.logger.warn('ONELYA_LOGIN is not set or using default value');

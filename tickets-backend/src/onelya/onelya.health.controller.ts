@@ -3,14 +3,21 @@ import { Controller, Get } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 
 @Controller('onelya')
 export class OnelyaHealthController {
   private readonly logger = new Logger(OnelyaHealthController.name);
-  private readonly baseUrl =
-    process.env.ONELYA_BASE_URL || 'https://test.onelya.ru/api';
+  private readonly baseUrl: string;
 
-  constructor(private readonly http: HttpService) {}
+  constructor(
+    private readonly http: HttpService,
+    private readonly configService: ConfigService,
+  ) {
+    this.baseUrl =
+      this.configService.get<string>('ONELYA_BASE_URL') ||
+      'https://test.onelya.ru/api';
+  }
 
   @Get('health')
   async checkHealth() {
