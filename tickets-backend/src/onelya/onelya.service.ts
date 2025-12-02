@@ -55,7 +55,7 @@ export class OnelyaService {
       this.configService.get<string>('ONELYA_LOGIN')?.trim() ||
       'trevel_test';
     this.password =
-      this.configService.get<string>('ONELYA_PASSWORD') || 'hldKMo@9';
+      this.configService.get<string>('ONELYA_PASSWORD') || '5mPaN5KyB!27LN!';
     this.pos =
       this.configService.get<string>('ONELYA_POS')?.trim() || 'trevel_test';
     this.timeoutMs = 120000;
