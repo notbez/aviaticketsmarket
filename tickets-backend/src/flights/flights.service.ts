@@ -1,108 +1,107 @@
 // flights.service.ts
 import { Injectable, Logger } from '@nestjs/common';
-import { HttpService } from '@nestjs/axios';
-import { firstValueFrom } from 'rxjs';
-import { ConfigService } from '@nestjs/config';
+import { OnelyaService } from '../onelya/onelya.service';
+import {
+  RoutePricingRequest,
+  RoutePricingSegment,
+} from '../onelya/dto/avia-search.dto';
 
 @Injectable()
 export class FlightsService {
   private readonly logger = new Logger(FlightsService.name);
-  private readonly baseUrl: string;
-  private readonly login: string;
-  private readonly password: string;
-  private readonly pos: string;
 
-  constructor(
-    private readonly http: HttpService,
-    private readonly configService: ConfigService,
-  ) {
-    this.baseUrl =
-      this.configService.get<string>('ONELYA_BASE_URL') ||
-      'https://test.onelya.ru/api';
-    this.login =
-      this.configService.get<string>('ONELYA_LOGIN') || 'trevel_test';
-    this.password =
-      this.configService.get<string>('ONELYA_PASSWORD') || 'hldKMo@9';
-    this.pos = this.configService.get<string>('ONELYA_POS') || 'trevel_test';
-
-    // Проверка и предупреждения о пустых переменных
-    if (!this.login) {
-      this.logger.warn('ONELYA_LOGIN is not set, using empty string');
-    }
-    if (!this.password) {
-      this.logger.warn('ONELYA_PASSWORD is not set, using empty string');
-    }
-    if (!this.pos || this.pos === 'trevel_test') {
-      this.logger.warn('ONELYA_POS is not set or using default value');
-    }
-    this.logger.log(`Onelya baseUrl: ${this.baseUrl}`);
-  }
+  constructor(private readonly onelyaService: OnelyaService) {}
 
   async search(query: any) {
     const { from, to, date } = query;
 
-    const url = `${this.baseUrl}/Avia/V1/Search/RoutePricing`;
-    this.logger.log(`[Onelya] POST ${url} - Search: ${from} → ${to} on ${date}`);
+    const segments: RoutePricingSegment[] = [
+      {
+        OriginCode: from,
+        DestinationCode: to,
+        DepartureDate: this.buildDate(date),
+        DepartureTimeFrom: null,
+        DepartureTimeTo: null,
+      },
+    ];
 
-    const body = {
-      AdultQuantity: 1,
-      ChildQuantity: 0,
-      BabyWithoutPlaceQuantity: 0,
-      BabyWithPlaceQuantity: 0,
-      YouthQuantity: 0,
-      SeniorQuantity: 0,
-      Tariff: 'Standard',
-      ServiceClass: 'Economic',
-      DirectOnly: false,
-      Segments: [
-        {
-          OriginCode: from,
-          DestinationCode: to,
-          DepartureDate: `${date}T00:00:00`,
-        },
-      ],
+    if (query.returnDate) {
+      segments.push({
+        OriginCode: to,
+        DestinationCode: from,
+        DepartureDate: this.buildDate(query.returnDate),
+        DepartureTimeFrom: null,
+        DepartureTimeTo: null,
+      });
+    }
+
+    const body: RoutePricingRequest = {
+      AdultQuantity: this.toInt(query.adults, 1),
+      ChildQuantity: this.toInt(query.children, 0),
+      BabyWithoutPlaceQuantity: this.toInt(query.infantsWithoutSeat, 0),
+      BabyWithPlaceQuantity: this.toInt(query.infantsWithSeat, 0),
+      YouthQuantity: this.toInt(query.youth, 0),
+      SeniorQuantity: this.toInt(query.seniors, 0),
+      Tariff: query.tariff || 'Standard',
+      ServiceClass: query.serviceClass || 'Economic',
+      AirlineCodes: this.normalizeArray(query.airlineCodes),
+      DirectOnly: query.directOnly === 'true' ? true : false,
+      Segments: segments,
+      DiscountCodes: null,
+      PriceFilter: query.priceFilter || null,
     };
 
-    const token = Buffer.from(`${this.login}:${this.password}`).toString(
-      'base64',
+    this.logger.log(
+      `[Onelya] RoutePricing: ${from} → ${to} (${segments.length} segment(s))`,
     );
-
-    this.logger.debug(`[Onelya] Request payload: ${JSON.stringify(body)}`);
+    this.logger.debug(`[Onelya] RoutePricing payload: ${JSON.stringify(body)}`);
 
     try {
-      const response = await firstValueFrom(
-        this.http.post(url, body, {
-          headers: {
-            Authorization: `Basic ${token}`,
-            Pos: this.pos,
-            'Content-Type': 'application/json',
-          },
-          timeout: 30000,
-        }),
-      );
-
-      this.logger.log(`[Onelya] Search response status: ${response.status}`);
-      this.logger.debug(`[Onelya] Response data keys: ${Object.keys(response.data || {}).join(', ')}`);
-
-      return {
-        ...response.data,
-        mock: false,
-      };
+      const data = await this.onelyaService.routePricing(body);
+      return { ...data, mock: false };
     } catch (error: any) {
-      const errorMessage = error?.response?.data || error?.message || String(error);
-      const errorStatus = error?.response?.status;
-      this.logger.error(
-        `[Onelya] Search failed: ${errorMessage}`,
-        errorStatus ? `Status: ${errorStatus}` : '',
-      );
-      
-      // Возвращаем мок-данные с пометкой
+      const message = error?.message || 'Onelya search failed';
+      this.logger.error(`[Onelya] RoutePricing failed: ${message}`);
+
       return {
         error: true,
         mock: true,
         results: [],
-        message: 'Onelya API недоступен, возвращены мок-данные',
+        message,
       };
     }
+  }
+
+  private buildDate(date?: string): string {
+    if (!date) {
+      return new Date().toISOString();
+    }
+
+    const normalized = new Date(date);
+    if (Number.isNaN(normalized.getTime())) {
+      return `${date}T00:00:00`;
+    }
+    return `${normalized.toISOString().substring(0, 10)}T00:00:00`;
+  }
+
+  private toInt(value: unknown, fallback: number): number {
+    const parsed = parseInt(value as string, 10);
+    return Number.isNaN(parsed) ? fallback : parsed;
+  }
+
+  private normalizeArray(value: unknown): string[] | undefined {
+    if (!value) {
+      return undefined;
+    }
+    if (Array.isArray(value)) {
+      return value.filter(Boolean);
+    }
+    if (typeof value === 'string') {
+      return value
+        .split(',')
+        .map((v) => v.trim())
+        .filter(Boolean);
+    }
+    return undefined;
   }
 }

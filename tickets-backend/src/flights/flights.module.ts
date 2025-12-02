@@ -2,10 +2,10 @@
 import { Module } from '@nestjs/common';
 import { FlightsController } from './flights.controller';
 import { FlightsService } from './flights.service';
-import { HttpModule } from '@nestjs/axios';
+import { OnelyaModule } from '../onelya/onelya.module';
 
 @Module({
-  imports: [HttpModule],
+  imports: [OnelyaModule],
   controllers: [FlightsController],
   providers: [FlightsService],
 })
