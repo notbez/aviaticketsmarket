@@ -16,14 +16,12 @@ export class OnelyaHealthController {
   ) {
     this.baseUrl =
       this.configService.get<string>('ONELYA_BASE_URL') ||
-      'https://test.onelya.ru/api';
+      'https://api-test.onelya.ru/';
   }
 
   @Get('health')
   async checkHealth() {
-    const checkUrl = this.baseUrl.endsWith('/api')
-      ? this.baseUrl
-      : `${this.baseUrl}/api`;
+    const checkUrl = this.baseUrl;
     
     this.logger.log(`[Health] Checking Onelya API at ${checkUrl}`);
 

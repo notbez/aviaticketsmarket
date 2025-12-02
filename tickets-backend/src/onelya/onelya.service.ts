@@ -50,7 +50,7 @@ export class OnelyaService {
   ) {
     this.baseUrl =
       this.configService.get<string>('ONELYA_BASE_URL')?.trim() ||
-      'https://test.onelya.ru/api';
+      'https://api-test.onelya.ru/';
     this.login =
       this.configService.get<string>('ONELYA_LOGIN')?.trim() ||
       'trevel_test';
