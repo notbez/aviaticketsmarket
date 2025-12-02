@@ -1,11 +1,17 @@
 // tickets-backend/src/booking/booking.service.ts
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { randomUUID } from 'crypto';
 import { Booking, BookingDocument } from '../schemas/booking.schema';
 import { OnelyaService } from '../onelya/onelya.service';
-import { ReservationCreateRequest } from '../onelya/dto/order-reservation.dto';
+import {
+  ReservationConfirmRequest,
+  ReservationCreateRequest,
+  ReservationBlankRequest,
+  ReservationVoidRequest,
+  ReservationCancelRequest,
+} from '../onelya/dto/order-reservation.dto';
 
 export type CreateResult =
   | { success: true; booking: BookingDocument; raw?: any }
@@ -176,26 +182,199 @@ export class BookingService {
     }
   }
 
+  public async recalcOnelya(orderId: number) {
+    if (typeof orderId !== 'number' || Number.isNaN(orderId)) {
+      throw new BadRequestException('OrderId (number) is required for recalc');
+    }
+
+    this.logger.log(`[Onelya] Reservation/Recalc request for order ${orderId}`);
+    const result = await this.onelyaService.recalcReservation({ OrderId: orderId });
+
+    if (
+      result &&
+      typeof result.AmountAfter === 'number' &&
+      Number.isFinite(result.AmountAfter)
+    ) {
+      const booking = await this.bookingModel.findOne({
+        providerBookingId: String(orderId),
+      });
+
+      if (booking) {
+        booking.payment = booking.payment || {
+          paymentStatus: 'pending',
+          amount: 0,
+          currency: 'RUB',
+        };
+        booking.payment.amount = result.AmountAfter;
+        await booking.save();
+      }
+    }
+
+    return result;
+  }
+
   // --- Confirm reservation in Onelya ---
-  public async confirmOnelya(providerBookingId: string) {
-    this.logger.warn(
-      `[Onelya] Reservation/Confirm is not implemented yet (waiting for documentation). ReservationId=${providerBookingId}`,
-    );
-    return {
-      success: false,
-      error: 'Reservation/Confirm not implemented yet. Awaiting documentation.',
+  public async confirmOnelya(
+    providerBookingId: string,
+    payload?: Partial<ReservationConfirmRequest>,
+  ) {
+    const orderId = this.parseOrderId(providerBookingId, payload?.OrderId);
+
+    const request: ReservationConfirmRequest = {
+      OrderId: orderId,
+      OrderCustomerIds: payload?.OrderCustomerIds ?? null,
+      OrderCustomerDocuments: payload?.OrderCustomerDocuments ?? null,
+      ProviderPaymentForm: payload?.ProviderPaymentForm ?? null,
+      MaskedCardNumber: payload?.MaskedCardNumber ?? null,
+      AgentPaymentId: payload?.AgentPaymentId ?? null,
+      PaymentMethod: payload?.PaymentMethod ?? null,
+      FasterPaymentsQrTId: payload?.FasterPaymentsQrTId ?? null,
+      ProviderCustomerEmail: payload?.ProviderCustomerEmail ?? null,
+      PaymentRemark: payload?.PaymentRemark ?? null,
     };
+
+    this.logger.log(
+      `[Onelya] Reservation/Confirm request for order ${orderId}`,
+    );
+
+    const result = await this.onelyaService.confirmReservation(request);
+    const booking = await this.bookingModel.findOne({
+      providerBookingId: String(orderId),
+    });
+
+    if (booking) {
+      booking.bookingStatus = 'ticketed';
+      booking.rawProviderData = result;
+      await booking.save();
+    }
+
+    return result;
   }
 
   // --- Get blank / ticket PDF or JSON ---
   public async getBlank(providerBookingId: string) {
-    this.logger.warn(
-      `[Onelya] Reservation/Blank is not implemented yet (waiting for documentation). ReservationId=${providerBookingId}`,
-    );
-    return {
-      error: true,
-      message: 'Reservation/Blank not implemented yet. Awaiting documentation.',
+    const orderId = this.parseOrderId(providerBookingId);
+    const request: ReservationBlankRequest = {
+      OrderId: orderId,
+      OrderItemId: null,
+      OrderItemIds: null,
+      RetrieveMainServices: true,
+      RetrieveUpsales: true,
+      BlankLanguage: 'NoValue',
     };
+
+    this.logger.log(
+      `[Onelya] Reservation/Blank request for order ${orderId}`,
+    );
+
+    const result = await this.onelyaService.blankReservation(request);
+    return {
+      type: result.contentType?.includes('pdf') ? 'pdf' : 'binary',
+      buffer: result.buffer,
+      contentType: result.contentType,
+    };
+  }
+
+  public async voidOnelya(
+    providerBookingId: string,
+    payload?: Partial<ReservationVoidRequest>,
+  ) {
+    const orderId = this.parseOrderId(providerBookingId, payload?.OrderId);
+    const request: ReservationVoidRequest = {
+      OrderId: orderId,
+      OrderItemIds: payload?.OrderItemIds ?? null,
+      OrderCustomerIds: payload?.OrderCustomerIds ?? null,
+    };
+
+    this.logger.log(`[Onelya] Reservation/Void request for order ${orderId}`);
+    const result = await this.onelyaService.voidReservation(request);
+
+    const booking = await this.bookingModel.findOne({
+      providerBookingId: String(orderId),
+    });
+
+    if (booking) {
+      booking.bookingStatus = 'voided';
+      booking.rawProviderData = result;
+      await booking.save();
+    }
+
+    return result;
+  }
+
+  public async cancelOnelya(
+    providerBookingId: string,
+    payload?: Partial<ReservationCancelRequest>,
+  ) {
+    const orderId = this.parseOrderId(providerBookingId, payload?.OrderId);
+    const request: ReservationCancelRequest = {
+      OrderId: orderId,
+      OrderItemIds: payload?.OrderItemIds ?? null,
+      OrderCustomerIds: payload?.OrderCustomerIds ?? null,
+    };
+
+    this.logger.log(
+      `[Onelya] Reservation/Cancel request for order ${orderId}`,
+    );
+
+    const result = await this.onelyaService.cancelReservation(request);
+
+    const booking = await this.bookingModel.findOne({
+      providerBookingId: String(orderId),
+    });
+
+    if (booking) {
+      booking.bookingStatus = 'cancelled';
+      booking.rawProviderData = result;
+      await booking.save();
+    }
+
+    return result;
+  }
+
+  public async getOrderInfoOnelya(
+    providerBookingId: string,
+    payload?: Partial<OrderInfoRequest>,
+  ) {
+    const orderId = this.parseOrderId(providerBookingId, payload?.OrderId);
+    const request: OrderInfoRequest = {
+      OrderId: orderId,
+      AgentReferenceId: payload?.AgentReferenceId ?? null,
+      ReservNumber: payload?.ReservNumber ?? null,
+    };
+
+    this.logger.log(
+      `[Onelya] OrderInfo request for order ${orderId}`,
+    );
+
+    const result = await this.onelyaService.orderInfo(request);
+
+    const booking = await this.bookingModel.findOne({
+      providerBookingId: String(orderId),
+    });
+
+    if (booking) {
+      booking.rawProviderData = result;
+      await booking.save();
+    }
+
+    return result;
+  }
+
+  private parseOrderId(
+    providerBookingId?: string,
+    fallback?: number,
+  ): number {
+    if (typeof fallback === 'number' && Number.isFinite(fallback)) {
+      return fallback;
+    }
+    const parsed = Number(providerBookingId);
+    if (!Number.isNaN(parsed) && Number.isFinite(parsed)) {
+      return parsed;
+    }
+    throw new BadRequestException(
+      'Valid OrderId (number) is required for this operation',
+    );
   }
 
   // get booking by our internal id

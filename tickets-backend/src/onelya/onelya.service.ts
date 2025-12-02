@@ -21,6 +21,18 @@ import {
 import {
   ReservationCreateRequest,
   ReservationCreateResponse,
+  ReservationRecalcRequest,
+  ReservationRecalcResponse,
+  ReservationConfirmRequest,
+  ReservationConfirmResponse,
+  ReservationBlankRequest,
+  ReservationVoidRequest,
+  ReservationVoidResponse,
+  ReservationCancelRequest,
+  OrderInfoRequest,
+  OrderInfoResponse,
+  OrderListRequest,
+  OrderListResponse,
 } from './dto/order-reservation.dto';
 
 @Injectable()
@@ -100,6 +112,90 @@ export class OnelyaService {
   ): Promise<ReservationCreateResponse> {
     return this.post<ReservationCreateRequest, ReservationCreateResponse>(
       '/Order/V1/Reservation/Create',
+      body,
+    );
+  }
+
+  async recalcReservation(
+    body: ReservationRecalcRequest,
+  ): Promise<ReservationRecalcResponse> {
+    return this.post<ReservationRecalcRequest, ReservationRecalcResponse>(
+      '/Order/V1/Reservation/Recalc',
+      body,
+    );
+  }
+
+  async confirmReservation(
+    body: ReservationConfirmRequest,
+  ): Promise<ReservationConfirmResponse> {
+    return this.post<ReservationConfirmRequest, ReservationConfirmResponse>(
+      '/Order/V1/Reservation/Confirm',
+      body,
+    );
+  }
+
+  async blankReservation(body: ReservationBlankRequest): Promise<{
+    buffer: Buffer;
+    contentType?: string;
+  }> {
+    const endpoint = '/Order/V1/Reservation/Blank';
+    const url = this.buildUrl(endpoint);
+    const headers = this.buildHeaders();
+
+    this.logger.log(`[Onelya] POST ${url} (blank)`);
+    this.logger.debug(`[Onelya] Blank request: ${JSON.stringify(body)}`);
+
+    try {
+      const response = await firstValueFrom(
+        this.httpService.post<ArrayBuffer>(url, body, {
+          headers,
+          timeout: this.timeoutMs,
+          responseType: 'arraybuffer',
+        }),
+      );
+
+      const contentType = response.headers?.['content-type'];
+      this.logger.log(
+        `[Onelya] Blank response ${response.status} (${contentType || 'unknown'})`,
+      );
+
+      return {
+        buffer: Buffer.from(response.data),
+        contentType,
+      };
+    } catch (error) {
+      this.handleAxiosError(endpoint, error as AxiosError);
+    }
+  }
+
+  async voidReservation(
+    body: ReservationVoidRequest,
+  ): Promise<ReservationVoidResponse> {
+    return this.post<ReservationVoidRequest, ReservationVoidResponse>(
+      '/Order/V1/Reservation/Void',
+      body,
+    );
+  }
+
+  async cancelReservation(
+    body: ReservationCancelRequest,
+  ): Promise<Record<string, never>> {
+    return this.post<ReservationCancelRequest, Record<string, never>>(
+      '/Order/V1/Reservation/Cancel',
+      body,
+    );
+  }
+
+  async orderInfo(body: OrderInfoRequest): Promise<OrderInfoResponse> {
+    return this.post<OrderInfoRequest, OrderInfoResponse>(
+      '/Order/V1/Info/OrderInfo',
+      body,
+    );
+  }
+
+  async orderList(body: OrderListRequest): Promise<OrderListResponse> {
+    return this.post<OrderListRequest, OrderListResponse>(
+      '/Order/V1/Info/OrderList',
       body,
     );
   }
