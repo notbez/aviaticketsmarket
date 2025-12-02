@@ -11,6 +11,7 @@ import {
   ReservationBlankRequest,
   ReservationVoidRequest,
   ReservationCancelRequest,
+  OrderInfoRequest,
 } from '../onelya/dto/order-reservation.dto';
 
 export type CreateResult =
@@ -294,7 +295,7 @@ export class BookingService {
     });
 
     if (booking) {
-      booking.bookingStatus = 'voided';
+      booking.bookingStatus = 'canceled';
       booking.rawProviderData = result;
       await booking.save();
     }
@@ -324,7 +325,7 @@ export class BookingService {
     });
 
     if (booking) {
-      booking.bookingStatus = 'cancelled';
+      booking.bookingStatus = 'canceled';
       booking.rawProviderData = result;
       await booking.save();
     }
