@@ -243,6 +243,7 @@ export class OnelyaService {
     return {
       Authorization: `Basic ${token}`,
       Pos: this.pos,
+      PartnerId: this.configService.get('ONELYA_PARTNER_ID'),
       'Content-Type': 'application/json',
       'Accept-Encoding': 'gzip',
     };
