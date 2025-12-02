@@ -18,6 +18,10 @@ import {
   RoutePricingRequest,
   RoutePricingResponse,
 } from './dto/avia-search.dto';
+import {
+  ReservationCreateRequest,
+  ReservationCreateResponse,
+} from './dto/order-reservation.dto';
 
 @Injectable()
 export class OnelyaService {
@@ -87,6 +91,15 @@ export class OnelyaService {
   ): Promise<BrandFarePricingResponse> {
     return this.post<BrandFarePricingRequest, BrandFarePricingResponse>(
       '/Avia/V1/Search/BrandFarePricing',
+      body,
+    );
+  }
+
+  async createReservation(
+    body: ReservationCreateRequest,
+  ): Promise<ReservationCreateResponse> {
+    return this.post<ReservationCreateRequest, ReservationCreateResponse>(
+      '/Order/V1/Reservation/Create',
       body,
     );
   }

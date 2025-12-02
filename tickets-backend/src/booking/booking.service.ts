@@ -1,12 +1,11 @@
 // tickets-backend/src/booking/booking.service.ts
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { randomUUID } from 'crypto';
-import { HttpService } from '@nestjs/axios';
-import { firstValueFrom } from 'rxjs';
-import { ConfigService } from '@nestjs/config';
 import { Booking, BookingDocument } from '../schemas/booking.schema';
+import { OnelyaService } from '../onelya/onelya.service';
+import { ReservationCreateRequest } from '../onelya/dto/order-reservation.dto';
 
 export type CreateResult =
   | { success: true; booking: BookingDocument; raw?: any }
@@ -16,39 +15,10 @@ export type CreateResult =
 export class BookingService {
   private readonly logger = new Logger(BookingService.name);
 
-  // Onelya config - читаются через ConfigService, чтобы гарантированно подхватывать .env
-  private readonly baseUrl: string;
-  private readonly login: string;
-  private readonly password: string;
-  private readonly pos: string;
-
   constructor(
     @InjectModel(Booking.name) private bookingModel: Model<BookingDocument>,
-    private readonly http: HttpService,
-    private readonly configService: ConfigService,
-  ) {
-    // Читаем значения из ConfigService (ConfigModule.forRoot({ isGlobal: true }))
-    this.baseUrl =
-      this.configService.get<string>('ONELYA_BASE_URL') ||
-      'https://test.onelya.ru/api';
-    this.login =
-      this.configService.get<string>('ONELYA_LOGIN') || 'trevel_test';
-    this.password =
-      this.configService.get<string>('ONELYA_PASSWORD') || 'hldKMo@9';
-    this.pos = this.configService.get<string>('ONELYA_POS') || 'trevel_test';
-
-    // Проверка и предупреждения о пустых переменных
-    if (!this.login || this.login === 'trevel_test') {
-      this.logger.warn('ONELYA_LOGIN is not set or using default value');
-    }
-    if (!this.password || this.password === 'hldKMo@9') {
-      this.logger.warn('ONELYA_PASSWORD is not set or using default value');
-    }
-    if (!this.pos || this.pos === 'trevel_test') {
-      this.logger.warn('ONELYA_POS is not set or using default value');
-    }
-    this.logger.log(`Onelya baseUrl: ${this.baseUrl}`);
-  }
+    private readonly onelyaService: OnelyaService,
+  ) {}
 
   /**
    * Создание локального бронирования (fallback)
@@ -118,88 +88,71 @@ export class BookingService {
    * @returns Результат создания с данными бронирования и raw ответом от API
    */
   public async createOnelya(userId: string, body: any): Promise<CreateResult> {
-    const url = `${this.baseUrl}/Order/V1/Reservation/Create`;
-    const auth =
-      'Basic ' + Buffer.from(`${this.login}:${this.password}`).toString('base64');
+    const reservationRequest: ReservationCreateRequest | undefined =
+      body?.onelyaReservation || body?.reservationRequest;
 
-    const payload = {
-      Pos: this.pos,
-      Reservation: {
-        Pricing: {
-          Prices: [
-            {
-              PassengerType: 'Adult',
-              Quantity: 1,
-              Amount: body.price || 0,
-            },
-          ],
-        },
-        Segments:
-          body.segments || [
-            {
-              OriginCode: body.from,
-              DestinationCode: body.to,
-              DepartureDate: `${body.date}T00:00:00`,
-            },
-          ],
-        Contact: body.contact || {},
-      },
-    };
+    if (
+      !reservationRequest ||
+      !Array.isArray(reservationRequest.ReservationItems) ||
+      !Array.isArray(reservationRequest.Customers)
+    ) {
+      this.logger.warn(
+        '[Onelya] Missing reservation request payload, falling back to local booking',
+      );
+      const booking = await this.createLocal(userId, body);
+      return {
+        success: false,
+        booking,
+        error:
+          'Reservation request payload (onelyaReservation) is required for Onelya booking',
+      };
+    }
 
-    this.logger.log(`[Onelya] POST ${url}`);
-    this.logger.debug(`[Onelya] Request payload: ${JSON.stringify({ ...payload, Reservation: { ...payload.Reservation, Contact: body.contact ? '[REDACTED]' : undefined } })}`);
+    this.logger.log('[Onelya] Reservation/Create request');
+    this.logger.debug(
+      `[Onelya] Reservation/Create payload keys: ${Object.keys(
+        reservationRequest,
+      ).join(', ')}`,
+    );
 
     try {
-      this.logger.log(`[Onelya] Sending reservation create request to ${url}`);
-      const res = await firstValueFrom(
-        this.http.post<any>(url, payload, {
-          headers: {
-            Authorization: auth,
-            Pos: this.pos,
-            'Content-Type': 'application/json',
-            'Accept-Encoding': 'gzip',
-          },
-          timeout: 60000,
-        }),
+      const data = await this.onelyaService.createReservation(
+        reservationRequest,
       );
-
-      const data = res.data;
-      this.logger.log(`[Onelya] Reservation create response status: ${res.status}`);
-      this.logger.debug(`[Onelya] Response data keys: ${Object.keys(data || {}).join(', ')}`);
-
-      // Попытка извлечь ID брони из различных мест в ответе
-      const providerBookingId =
-        data?.ReservationId ||
-        data?.Reservation?.Id ||
-        data?.Result?.ReservationId ||
-        data?.Id ||
-        randomUUID();
+      const providerBookingId = data?.OrderId
+        ? String(data.OrderId)
+        : randomUUID();
 
       // Сохраняем в MongoDB
+      const bookingPayload = body?.localBooking ?? body;
       const booking = new this.bookingModel({
         user: new Types.ObjectId(userId),
-        from: body.from,
-        to: body.to,
-        departureDate: body.date ? new Date(body.date) : new Date(),
-        returnDate: body.returnDate ? new Date(body.returnDate) : null,
-        isRoundTrip: body.isRoundTrip || false,
-        flightNumber: body.flightNumber,
-        departTime: body.departTime,
-        arriveTime: body.arriveTime,
-        returnDepartTime: body.returnDepartTime,
-        returnArriveTime: body.returnArriveTime,
-        passengers: body.passengers || [],
+        from: bookingPayload.from,
+        to: bookingPayload.to,
+        departureDate: bookingPayload.date
+          ? new Date(bookingPayload.date)
+          : new Date(),
+        returnDate: bookingPayload.returnDate
+          ? new Date(bookingPayload.returnDate)
+          : null,
+        isRoundTrip: bookingPayload.isRoundTrip || false,
+        flightNumber: bookingPayload.flightNumber,
+        departTime: bookingPayload.departTime,
+        arriveTime: bookingPayload.arriveTime,
+        returnDepartTime: bookingPayload.returnDepartTime,
+        returnArriveTime: bookingPayload.returnArriveTime,
+        passengers: bookingPayload.passengers || [],
         providerBookingId,
         bookingStatus: 'reserved',
         provider: 'onelya',
         payment: {
           paymentStatus: 'pending',
-          amount: body.price || 0,
+          amount: bookingPayload.price || data?.Amount || 0,
           currency: 'RUB',
         },
-        seat: body.seat || '12A',
-        gate: body.gate || 'B5',
-        boardingTime: body.boardingTime || '08:45',
+        seat: bookingPayload.seat || '12A',
+        gate: bookingPayload.gate || 'B5',
+        boardingTime: bookingPayload.boardingTime || '08:45',
         rawProviderData: data,
       });
 
@@ -210,140 +163,39 @@ export class BookingService {
 
       return { success: true, booking, raw: data };
     } catch (err: any) {
-      const errorMessage = err?.response?.data || err?.message || String(err);
-      const errorStatus = err?.response?.status;
-      this.logger.error(
-        `[Onelya] Reservation create failed: ${errorMessage}`,
-        errorStatus ? `Status: ${errorStatus}` : '',
-      );
+      const errorMessage = err?.message || String(err);
+      this.logger.error(`[Onelya] Reservation create failed: ${errorMessage}`);
       // fallback to local
       const booking = await this.createLocal(userId, body);
       return {
         success: false,
         booking,
         error: errorMessage,
-        raw: err?.response?.data || null,
+        raw: err,
       };
     }
   }
 
   // --- Confirm reservation in Onelya ---
   public async confirmOnelya(providerBookingId: string) {
-    const url = `${this.baseUrl}/Order/V1/Reservation/Confirm`;
-    const auth =
-      'Basic ' + Buffer.from(`${this.login}:${this.password}`).toString('base64');
-
-    const payload = { ReservationId: providerBookingId, Pos: this.pos };
-
-    this.logger.log(`[Onelya] POST ${url} for reservation ${providerBookingId}`);
-
-    try {
-      const res = await firstValueFrom(
-        this.http.post<any>(url, payload, {
-          headers: {
-            Authorization: auth,
-            Pos: this.pos,
-            'Content-Type': 'application/json',
-            'Accept-Encoding': 'gzip',
-          },
-          timeout: 60000,
-        }),
-      );
-      const data = res.data;
-      this.logger.log(`[Onelya] Reservation confirm response status: ${res.status}`);
-
-      const booking = await this.bookingModel.findOne({
-        providerBookingId,
-      });
-      if (booking) {
-        booking.bookingStatus = 'ticketed';
-        await booking.save();
-      }
-
-      return { success: true, raw: data };
-    } catch (err: any) {
-      const errorMessage = err?.response?.data || err?.message || String(err);
-      this.logger.error(
-        `[Onelya] Reservation confirm failed: ${errorMessage}`,
-        err?.response?.status ? `Status: ${err.response.status}` : '',
-      );
-      return {
-        success: false,
-        error: errorMessage,
-      };
-    }
+    this.logger.warn(
+      `[Onelya] Reservation/Confirm is not implemented yet (waiting for documentation). ReservationId=${providerBookingId}`,
+    );
+    return {
+      success: false,
+      error: 'Reservation/Confirm not implemented yet. Awaiting documentation.',
+    };
   }
 
   // --- Get blank / ticket PDF or JSON ---
   public async getBlank(providerBookingId: string) {
-    const url1 = `${this.baseUrl}/Avia/V1/Reservation/Blank`;
-    const url2 = `${this.baseUrl}/Order/V1/Reservation/Blank`;
-    const auth =
-      'Basic ' + Buffer.from(`${this.login}:${this.password}`).toString('base64');
-
-    const payload = { ReservationId: providerBookingId, Pos: this.pos };
-
-    this.logger.log(`[Onelya] GET blank for reservation ${providerBookingId}`);
-
-    try {
-      this.logger.log(`[Onelya] Trying ${url1}`);
-      let res = await firstValueFrom(
-        this.http.post<any>(url1, payload, {
-          headers: {
-            Authorization: auth,
-            Pos: this.pos,
-            'Content-Type': 'application/json',
-          },
-          responseType: 'arraybuffer',
-          timeout: 60000,
-        }),
-      );
-
-      if (
-        res.headers &&
-        res.headers['content-type'] &&
-        res.headers['content-type'].includes('application/pdf')
-      ) {
-        return { type: 'pdf', buffer: Buffer.from(res.data) };
-      } else {
-        return { type: 'json', data: res.data };
-      }
-    } catch (err1: any) {
-      this.logger.warn(`[Onelya] Blank via Avia failed: ${err1?.message || String(err1)}, trying Order API`);
-      try {
-        this.logger.log(`[Onelya] Trying ${url2}`);
-        let res2 = await firstValueFrom(
-          this.http.post<any>(url2, payload, {
-            headers: {
-              Authorization: auth,
-              Pos: this.pos,
-              'Content-Type': 'application/json',
-            },
-            responseType: 'arraybuffer',
-            timeout: 60000,
-          }),
-        );
-
-        if (
-          res2.headers &&
-          res2.headers['content-type'] &&
-          res2.headers['content-type'].includes('application/pdf')
-        ) {
-          return { type: 'pdf', buffer: Buffer.from(res2.data) };
-        } else {
-          return { type: 'json', data: res2.data };
-        }
-      } catch (err2: any) {
-        const errorMessage = err2?.response?.data || err2?.message || 'Blank failed';
-        this.logger.error(
-          `[Onelya] Both blank endpoints failed: ${errorMessage}`,
-        );
-        return {
-          error: true,
-          message: errorMessage,
-        };
-      }
-    }
+    this.logger.warn(
+      `[Onelya] Reservation/Blank is not implemented yet (waiting for documentation). ReservationId=${providerBookingId}`,
+    );
+    return {
+      error: true,
+      message: 'Reservation/Blank not implemented yet. Awaiting documentation.',
+    };
   }
 
   // get booking by our internal id
